@@ -1648,6 +1648,8 @@ ${threeJsSrc}
     // - Grip → exit map (handled in onGrip)
     // - Never exit map from trigger
     if (vrMinimapActive) {
+      // If user just dragged (panned), ignore this click entirely
+      if (mapDidDrag) { mapDidDrag = false; return; }
       const now = performance.now();
       if (now - mapLastClick < 800) {
         const mapHits = raycaster.intersectObject(vrMinimapMesh);
@@ -1916,10 +1918,10 @@ ${threeJsSrc}
     if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
     const pad = Math.max(40, W * 0.04);
     const positions = getScenePositions(W, H, pad);
-    const nodeScale = Math.max(1, W / 512); // scale markers for higher-res canvas
+    const nodeScale = Math.max(1, W / 512) * 0.8; // scale markers for higher-res canvas
 
     // Scale down markers when zoomed in so they stay proportional
-    const zoomScale = activeMode && mapZoom > 1 ? 1 / (mapZoom * mapZoom) : 1;
+    const zoomScale = activeMode && mapZoom > 1 ? 1.2 / mapZoom : 1;
 
     // Connection lines
     ctx.lineWidth = 3 * nodeScale * zoomScale;
@@ -2178,8 +2180,8 @@ ${threeJsSrc}
             const pos = new THREE.Vector3();
             controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 7.5;
-              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 7.5;
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 6.0;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 6.0;
               if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 mapPanX += dx;
                 mapPanY += dy;
