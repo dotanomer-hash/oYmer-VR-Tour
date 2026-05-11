@@ -1681,17 +1681,29 @@ ${threeJsSrc}
     });
 
     // Scene nodes
+    const activeMode = vrMinimapActive;
     scenes.forEach(s => {
       const p = positions[s.id];
       const isCurrent = s.id === currentSceneId;
-      const r = isCurrent ? 28 : 20;
+      const r = isCurrent ? 32 : 24;
+
+      // Pulsing click target ring when active
+      if (activeMode && !isCurrent) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r + 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.7)';
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.8)';
       ctx.fill();
-      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.35)';
+      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
       ctx.lineWidth = isCurrent ? 3 : 2;
       ctx.stroke();
       ctx.shadowBlur = 0;
@@ -1706,10 +1718,10 @@ ${threeJsSrc}
       });
 
       // Label
-      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.65)';
-      ctx.font = (isCurrent ? 'bold ' : '') + '22px sans-serif';
+      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.75)';
+      ctx.font = (isCurrent ? 'bold ' : '') + '24px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 28);
+      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30);
     });
 
     ctx.fillStyle = 'rgba(255,122,0,0.9)';
@@ -1723,8 +1735,10 @@ ${threeJsSrc}
   function activateVRMinimap() {
     vrMinimapActive = true;
     vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(3, 3);
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(3.5, 3.5);
     vrMinimapMesh.material.opacity = 0.95;
+    // Redraw with larger clickable nodes
+    drawVRMinimap();
     // Position centered in front of viewer
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
@@ -1748,14 +1762,17 @@ ${threeJsSrc}
     const my = (1 - uv.y) * H; // canvas Y is flipped vs UV
     const pad = 60;
     const positions = getScenePositions(W, H, pad);
+    let closest = null;
+    let closestDist = Infinity;
     for (const s of TOUR.scenes) {
       const p = positions[s.id];
       const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
-      if (dist < 35) {
-        deactivateVRMinimap();
-        goToScene(s.id);
-        return true;
-      }
+      if (dist < closestDist) { closestDist = dist; closest = s; }
+    }
+    if (closest && closestDist < 80) {
+      deactivateVRMinimap();
+      goToScene(closest.id);
+      return true;
     }
     // Clicked minimap but not on a node — deactivate
     deactivateVRMinimap();
