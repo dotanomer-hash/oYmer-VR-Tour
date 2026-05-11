@@ -1622,7 +1622,10 @@ ${threeJsSrc}
   var mapTriggerHeld = false;
   var mapDragStart = null;
   var mapDidDrag = false;
-  var mapLastClick = 0; // timestamp for double-click detection
+  var mapLastClick = 0;
+  var gazeTargetId = null;   // scene id being gazed at
+  var gazeStartTime = 0;     // when gaze started
+  var gazeDwell = 1500;      // ms to hold gaze before navigating
   controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
   controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
   controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
@@ -1643,23 +1646,10 @@ ${threeJsSrc}
     }
 
     // If minimap is ACTIVE (enlarged):
-    // - Double-click trigger on scene node → navigate
+    // - Gaze at scene node ~1.5s → navigate (handled in animate loop)
     // - Trigger drag → pan (handled in animate loop)
     // - Grip → exit map (handled in onGrip)
-    // - Never exit map from trigger
     if (vrMinimapActive) {
-      // If user just dragged (panned), ignore this click entirely
-      if (mapDidDrag) { mapDidDrag = false; return; }
-      const now = performance.now();
-      if (now - mapLastClick < 800) {
-        const mapHits = raycaster.intersectObject(vrMinimapMesh);
-        if (mapHits.length > 0) {
-          handleVRMinimapClick(mapHits[0].uv);
-        }
-        mapLastClick = 0;
-      } else {
-        mapLastClick = now;
-      }
       return;
     }
 
@@ -1981,6 +1971,17 @@ ${threeJsSrc}
       ctx.font = (isCurrent ? 'bold ' : '') + Math.round(24 * nodeScale * zoomScale) + 'px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30 * nodeScale * zoomScale);
+
+      // Gaze progress ring
+      if (gazeTargetId === s.id && gazeStartTime > 0) {
+        const elapsed = performance.now() - gazeStartTime;
+        const progress = Math.min(1, elapsed / gazeDwell);
+        ctx.strokeStyle = '#ff7a00';
+        ctx.lineWidth = 4 * nodeScale * zoomScale;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r + 8 * nodeScale * zoomScale, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+        ctx.stroke();
+      }
     });
 
     ctx.restore(); // undo zoom/pan transform
@@ -2192,6 +2193,65 @@ ${threeJsSrc}
             mapDragStart = pos.clone();
           } else {
             mapDragStart = null;
+          }
+          // Gaze detection: raycast from controller to map, find nearest scene node
+          if (!mapTriggerHeld) {
+            let gazeHit = null;
+            [controller1, controller2].forEach(ctrl => {
+              if (gazeHit) return;
+              tempMatrix.identity().extractRotation(ctrl.matrixWorld);
+              raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+              raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+              const hits = raycaster.intersectObject(vrMinimapMesh);
+              if (hits.length > 0) gazeHit = hits[0];
+            });
+            if (gazeHit && gazeHit.uv) {
+              const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+              let mx = gazeHit.uv.x * W;
+              let my = (1 - gazeHit.uv.y) * H;
+              // Account for zoom/pan transform
+              if (mapZoom > 1) {
+                mx = (mx - W / 2 - mapPanX) / mapZoom + W / 2;
+                my = (my - H / 2 - mapPanY) / mapZoom + H / 2;
+              }
+              const pad = Math.max(40, W * 0.04);
+              const positions = getScenePositions(W, H, pad);
+              let closestId = null;
+              let closestDist = Infinity;
+              for (const s of TOUR.scenes) {
+                if (s.id === currentSceneId) continue;
+                const p = positions[s.id];
+                const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+                if (dist < closestDist) { closestDist = dist; closestId = s.id; }
+              }
+              const nodeScale = Math.max(1, W / 512) * 0.8;
+              const hitRadius = 32 * nodeScale;
+              if (closestId !== null && closestDist < hitRadius) {
+                if (gazeTargetId === closestId) {
+                  const elapsed = performance.now() - gazeStartTime;
+                  if (elapsed >= gazeDwell) {
+                    goToScene(closestId);
+                    gazeTargetId = null;
+                    gazeStartTime = 0;
+                    drawVRMinimap();
+                  } else {
+                    mapNeedsRedraw = true;
+                  }
+                } else {
+                  gazeTargetId = closestId;
+                  gazeStartTime = performance.now();
+                  mapNeedsRedraw = true;
+                }
+              } else {
+                if (gazeTargetId !== null) mapNeedsRedraw = true;
+                gazeTargetId = null;
+                gazeStartTime = 0;
+              }
+            } else {
+              if (gazeTargetId !== null) mapNeedsRedraw = true;
+              gazeTargetId = null;
+              gazeStartTime = 0;
+            }
           }
           if (mapNeedsRedraw) {
             mapNeedsRedraw = false;
