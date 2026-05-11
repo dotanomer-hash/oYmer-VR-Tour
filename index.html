@@ -1600,12 +1600,15 @@ ${threeJsSrc}
 
   // Grip button: when map is active → exit map, otherwise toggle minimap visibility
   let vrMinimapHidden = false;
+  var mapActivatedAt = 0;
   function onGrip() {
     if (vrMinimapActive) {
-      deactivateVRMinimap();
+      // Only exit if map has been open for at least 300ms (prevent accidental close)
+      if (performance.now() - mapActivatedAt > 300) {
+        deactivateVRMinimap();
+      }
     } else {
       vrMinimapHidden = !vrMinimapHidden;
-      if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
     }
   }
   controller1.addEventListener('squeeze', onGrip);
@@ -1988,6 +1991,7 @@ ${threeJsSrc}
 
   function activateVRMinimap() {
     vrMinimapActive = true;
+    mapActivatedAt = performance.now();
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
@@ -2152,8 +2156,8 @@ ${threeJsSrc}
             const pos = new THREE.Vector3();
             controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 1.5;
-              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 1.5;
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 15;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 15;
               if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 mapPanX += dx;
                 mapPanY += dy;
