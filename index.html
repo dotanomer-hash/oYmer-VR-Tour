@@ -1598,16 +1598,24 @@ ${threeJsSrc}
   controller2.addEventListener('select', onVRSelect);
   scene.add(controller2);
 
-  // A button (squeeze) toggles minimap visibility
+  // Grip button: when map is active → exit map, otherwise toggle minimap visibility
   let vrMinimapHidden = false;
-  controller1.addEventListener('squeeze', () => {
-    vrMinimapHidden = !vrMinimapHidden;
-    if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
-  });
-  controller2.addEventListener('squeeze', () => {
-    vrMinimapHidden = !vrMinimapHidden;
-    if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
-  });
+  function onGrip() {
+    if (vrMinimapActive) {
+      deactivateVRMinimap();
+    } else {
+      vrMinimapHidden = !vrMinimapHidden;
+      if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
+    }
+  }
+  controller1.addEventListener('squeeze', onGrip);
+  controller2.addEventListener('squeeze', onGrip);
+
+  // Track trigger for pan mode (selectstart/selectend)
+  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) mapTriggerHeld = true; });
+  controller1.addEventListener('selectend', () => { mapTriggerHeld = false; });
+  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) mapTriggerHeld = true; });
+  controller2.addEventListener('selectend', () => { mapTriggerHeld = false; });
 
   function onVRSelect(event) {
     const controller = event.target;
@@ -1623,15 +1631,13 @@ ${threeJsSrc}
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
     }
 
-    // If minimap is ACTIVE (enlarged), it takes priority
+    // If minimap is ACTIVE (enlarged), clicks on it navigate scenes
     if (vrMinimapActive && vrMinimapMesh.visible) {
       const mapHits = raycaster.intersectObject(vrMinimapMesh);
       if (mapHits.length > 0) {
         handleVRMinimapClick(mapHits[0].uv);
-        return;
       }
-      // Click outside active minimap deactivates it
-      deactivateVRMinimap();
+      // Use grip button to exit map, not click outside
       return;
     }
 
@@ -1811,21 +1817,31 @@ ${threeJsSrc}
   let mapZoom = 1.0;
   let mapPanX = 0, mapPanY = 0;
   let mapNeedsRedraw = false;
+  let mapDragStart = null; // controller position when trigger drag started
+
+  let mapTriggerHeld = false; // trigger held = pan mode
 
   // Update canvas and geometry when floor plan image loads
+  function updateMapAspect() {
+    if (!minimapFloorImg || !minimapFloorImg.complete || !minimapFloorImg.naturalWidth) return;
+    mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
+    mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
+    mapCanvasH = Math.round(mapCanvasW * mapAspect);
+    if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+    vrMinimapCanvas.width = mapCanvasW;
+    vrMinimapCanvas.height = mapCanvasH;
+    // Rebuild geometry with correct aspect — wider maps get wider plane
+    const planeW = mapAspect < 1 ? 1.0 : 0.8;
+    const planeH = mapAspect < 1 ? planeW * mapAspect : 0.8 * mapAspect;
+    vrMinimapMesh.geometry.dispose();
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(planeW, planeH);
+    vrMinimapTex.needsUpdate = true;
+    drawVRMinimap();
+  }
   if (minimapFloorImg) {
     const waitForImg = () => {
       if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
-        mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
-        mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
-        mapCanvasH = Math.round(mapCanvasW * mapAspect);
-        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-        vrMinimapCanvas.width = mapCanvasW;
-        vrMinimapCanvas.height = mapCanvasH;
-        // Rebuild geometry with correct aspect ratio
-        vrMinimapMesh.geometry.dispose();
-        vrMinimapMesh.geometry = new THREE.PlaneGeometry(0.8, 0.8 * mapAspect);
-        drawVRMinimap();
+        updateMapAspect();
       } else {
         setTimeout(waitForImg, 100);
       }
@@ -1968,9 +1984,17 @@ ${threeJsSrc}
     mapPanX = 0;
     mapPanY = 0;
     vrMinimapMesh.geometry.dispose();
-    // Large plane that almost fills the view — respect PDF aspect ratio
-    const bigW = 6;
-    const bigH = bigW * mapAspect;
+    // Large plane that almost fills the view — respect actual aspect ratio
+    let bigW, bigH;
+    if (mapAspect < 1) {
+      // Landscape: width-dominant
+      bigW = 7;
+      bigH = bigW * mapAspect;
+    } else {
+      // Portrait: height-dominant
+      bigH = 7;
+      bigW = bigH / mapAspect;
+    }
     vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
     vrMinimapMesh.material.opacity = 0.97;
     vrMinimapMesh.material.depthTest = true;
@@ -1993,7 +2017,9 @@ ${threeJsSrc}
     mapPanX = 0;
     mapPanY = 0;
     vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(0.8, 0.8 * mapAspect);
+    const smW = mapAspect < 1 ? 1.0 : 0.8;
+    const smH = mapAspect < 1 ? smW * mapAspect : 0.8 * mapAspect;
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(smW, smH);
     vrMinimapMesh.material.opacity = 0.85;
     vrMinimapMesh.material.depthTest = false;
     vrMinimapMesh.material.depthWrite = false;
@@ -2099,38 +2125,39 @@ ${threeJsSrc}
         if (!vrMinimapHidden) updateVRMinimapPosition();
         updateRayDots();
 
-        // Thumbstick zoom/pan when map is active
-        // Left stick: pan, Right stick: zoom (Y axis)
+        // Map controls: thumbstick = zoom, hold trigger + move controller = pan
         if (vrMinimapActive) {
+          // Thumbstick zoom
           const session = renderer.xr.getSession();
           if (session) {
             const sources = Array.from(session.inputSources).filter(s => s.gamepad && s.gamepad.axes.length >= 4);
-            // Use handedness to distinguish sticks: left=pan, right=zoom
             for (const src of sources) {
-              const ax = src.gamepad.axes[2];
               const ay = src.gamepad.axes[3];
-              if (src.handedness === 'right') {
-                // Right thumbstick Y = zoom
-                if (Math.abs(ay) > 0.15) {
-                  mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.05));
-                  mapNeedsRedraw = true;
-                }
-              } else {
-                // Left thumbstick = pan
-                if (Math.abs(ax) > 0.15) {
-                  mapPanX += ax * 12;
-                  mapNeedsRedraw = true;
-                }
-                if (Math.abs(ay) > 0.15) {
-                  mapPanY += ay * 12;
-                  mapNeedsRedraw = true;
-                }
+              if (Math.abs(ay) > 0.15) {
+                mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.05));
+                mapNeedsRedraw = true;
               }
             }
-            if (mapNeedsRedraw) {
-              mapNeedsRedraw = false;
-              drawVRMinimap();
+          }
+          // Trigger held + controller movement = pan
+          if (mapTriggerHeld) {
+            const ctrl = controller1.matrixWorld ? controller1 : controller2;
+            const pos = new THREE.Vector3();
+            ctrl.getWorldPosition(pos);
+            if (mapDragStart) {
+              const dx = (pos.x - mapDragStart.x) * 800;
+              const dy = -(pos.y - mapDragStart.y) * 800;
+              mapPanX += dx;
+              mapPanY += dy;
+              mapNeedsRedraw = true;
             }
+            mapDragStart = pos.clone();
+          } else {
+            mapDragStart = null;
+          }
+          if (mapNeedsRedraw) {
+            mapNeedsRedraw = false;
+            drawVRMinimap();
           }
         }
       }
