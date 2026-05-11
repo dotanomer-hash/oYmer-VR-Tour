@@ -1044,15 +1044,28 @@ ${threeJsSrc}
       hsMesh.position.copy(hsPos);
       const isFloor = (hs.placement === 'floor');
       if (isFloor) {
-        // Floor hotspot: lie flat facing up
-        hsMesh.rotation.set(-Math.PI / 2, 0, 0);
-        // Rotate to face toward center on XZ plane
-        hsMesh.rotation.z = Math.atan2(hsPos.x, hsPos.z);
+        // Floor hotspot: tilt to lie flat like a ground marker
+        // Point normal along the radial direction from center, then tilt 70° toward ground
+        hsMesh.lookAt(0, 0, 0);
+        hsMesh.rotateX(Math.PI * 0.38);
       } else {
         hsMesh.lookAt(0, 0, 0);
       }
       hsMesh.userData._pulse = true;
       hsMesh.userData._isFloor = isFloor;
+
+      // Add a ring around floor hotspots for visual distinction
+      if (isFloor) {
+        const ringGeo = new THREE.RingGeometry(4.5, 6, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthTest: false });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.position.copy(hsPos);
+        ringMesh.lookAt(0, 0, 0);
+        ringMesh.rotateX(Math.PI * 0.38);
+        ringMesh.userData._pulse = true;
+        ringMesh.userData._isFloor = true;
+        vrHotspotGroup.add(ringMesh);
+      }
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
@@ -1061,7 +1074,8 @@ ${threeJsSrc}
       );
       hitMesh.position.copy(hsPos);
       if (isFloor) {
-        hitMesh.rotation.copy(hsMesh.rotation);
+        hitMesh.lookAt(0, 0, 0);
+        hitMesh.rotateX(Math.PI * 0.38);
       } else {
         hitMesh.lookAt(0, 0, 0);
       }
@@ -1730,8 +1744,8 @@ ${threeJsSrc}
       const toCamera = camPos.clone().sub(hitTarget.position).normalize();
       gazeFillMesh.position.add(toCamera.multiplyScalar(0.3));
       if (hitTarget.userData.placement === 'floor') {
-        // Match floor hotspot orientation
-        gazeFillMesh.rotation.set(-Math.PI / 2, 0, Math.atan2(hitTarget.position.x, hitTarget.position.z));
+        gazeFillMesh.lookAt(camPos);
+        gazeFillMesh.rotateX(Math.PI * 0.38);
       } else {
         gazeFillMesh.lookAt(camPos);
       }
