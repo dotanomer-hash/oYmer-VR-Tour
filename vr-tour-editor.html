@@ -859,8 +859,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 <title>VR Tour</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
-#viewer-canvas { width: 100vw; height: 100vh; display: block; }
+body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
+#viewer-canvas { width: 100vw; height: 100vh; display: block; touch-action: none; }
 
 /* Logo */
 #logo { position: fixed; top: 12px; right: 16px; font-size: 22px; font-weight: 900; color: #ff7a00; z-index: 1000; pointer-events: none; text-shadow: 0 0 8px rgba(255,122,0,0.5); }
@@ -1239,12 +1239,14 @@ ${threeJsSrc}
   document.addEventListener('pointerdown', e => {
     if (renderer.xr.isPresenting) return;
     if (isOverUI(e.target)) return;
+    e.preventDefault();
     pointerDown = true; pointerMoved = false;
     startX = lastX = e.clientX; startY = lastY = e.clientY;
     try { renderer.domElement.setPointerCapture && renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
   });
   document.addEventListener('pointermove', e => {
     if (!pointerDown || renderer.xr.isPresenting) return;
+    e.preventDefault();
     if (Math.abs(e.clientX-startX)>5||Math.abs(e.clientY-startY)>5) pointerMoved = true;
     lon -= (e.clientX - lastX) * 0.25;
     lat += (e.clientY - lastY) * 0.25;
