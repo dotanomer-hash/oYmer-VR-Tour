@@ -1002,16 +1002,18 @@ ${threeJsSrc}
       const hex = '#' + color.toString(16).padStart(6, '0');
       const iconChar = hs.icon || (hs.type === 'nav' ? '>' : hs.type === 'info' ? 'i' : '*');
       const hsMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(5, 32),
+        new THREE.CircleGeometry(4, 32),
         new THREE.MeshBasicMaterial({
           map: makeTextTexture(iconChar, hex),
           transparent: true,
+          opacity: 0.7,
           side: THREE.DoubleSide,
           depthTest: false
         })
       );
       hsMesh.position.copy(hsPos);
       hsMesh.lookAt(0, 0, 0);
+      hsMesh.userData._pulse = true;
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
@@ -1509,14 +1511,14 @@ ${threeJsSrc}
     ]);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xff7a00, linewidth: 2, transparent: true, opacity: 0.6 });
     group.add(new THREE.Line(lineGeo, lineMat));
-    // Dot at the end of the ray (bigger, with white core for clarity)
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.95, depthTest: false });
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.2, 20, 12), dotMat);
+    // Dot at the end of the ray
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, depthTest: false });
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 8), dotMat);
     dot.position.set(0, 0, -500);
     dot.name = 'rayDot';
     dot.renderOrder = 1000;
     const dotCore = new THREE.Mesh(
-      new THREE.SphereGeometry(0.45, 16, 8),
+      new THREE.SphereGeometry(0.05, 12, 6),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false })
     );
     dotCore.renderOrder = 1001;
@@ -1626,7 +1628,7 @@ ${threeJsSrc}
   let gazeTarget = null;
   let gazeTimer = 0;
   let gazeGrace = 0; // grace period: keeps target alive briefly when ray wanders off
-  const GAZE_DWELL = 1.8;   // seconds to activate
+  const GAZE_DWELL = 1.4;   // seconds to activate
   const GAZE_GRACE = 0.6;   // seconds of forgiveness when ray leaves target
   let lastFrameTime = performance.now();
 
@@ -1926,9 +1928,22 @@ ${threeJsSrc}
     });
   }
 
+  // Subtle pulse for hotspot meshes
+  function pulseHotspots(time) {
+    vrHotspotGroup.children.forEach(c => {
+      if (c.userData._pulse) {
+        const s = 0.92 + 0.08 * Math.sin(time * 1.8 + c.position.x);
+        c.scale.set(s, s, s);
+        c.material.opacity = 0.55 + 0.15 * Math.sin(time * 1.8 + c.position.x);
+      }
+    });
+  }
+
   // Animate
   function animate() {
     renderer.setAnimationLoop(() => {
+      const t = performance.now() / 1000;
+      pulseHotspots(t);
       if (!renderer.xr.isPresenting) {
         const phi = (90 - lat) * Math.PI / 180;
         const theta = lon * Math.PI / 180;
