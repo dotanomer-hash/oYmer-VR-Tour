@@ -1909,8 +1909,11 @@ ${threeJsSrc}
     const positions = getScenePositions(W, H, pad);
     const nodeScale = Math.max(1, W / 512); // scale markers for higher-res canvas
 
+    // Scale down markers when zoomed in so they stay proportional
+    const zoomScale = activeMode && mapZoom > 1 ? 1 / mapZoom : 1;
+
     // Connection lines
-    ctx.lineWidth = 3 * nodeScale;
+    ctx.lineWidth = 3 * nodeScale * zoomScale;
     scenes.forEach(s => {
       s.hotspots.forEach(hs => {
         if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
@@ -1929,26 +1932,26 @@ ${threeJsSrc}
     scenes.forEach(s => {
       const p = positions[s.id];
       const isCurrent = s.id === currentSceneId;
-      const r = (isCurrent ? 32 : 24) * nodeScale;
+      const r = (isCurrent ? 32 : 24) * nodeScale * zoomScale;
 
       // Pulsing click target ring when active
       if (activeMode && !isCurrent) {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2 * nodeScale;
-        ctx.setLineDash([6 * nodeScale, 4 * nodeScale]);
+        ctx.lineWidth = 2 * nodeScale * zoomScale;
+        ctx.setLineDash([6 * nodeScale * zoomScale, 4 * nodeScale * zoomScale]);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r + 12 * nodeScale, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, r + 12 * nodeScale * zoomScale, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
-      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale; }
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale * zoomScale; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.8)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale;
+      ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale * zoomScale;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -1956,16 +1959,16 @@ ${threeJsSrc}
       s.hotspots.forEach((hs, hi) => {
         const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(p.x + (r + 12 * nodeScale) * Math.cos(a), p.y + (r + 12 * nodeScale) * Math.sin(a), 5 * nodeScale, 0, Math.PI * 2);
+        ctx.arc(p.x + (r + 12 * nodeScale * zoomScale) * Math.cos(a), p.y + (r + 12 * nodeScale * zoomScale) * Math.sin(a), 5 * nodeScale * zoomScale, 0, Math.PI * 2);
         ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
         ctx.fill();
       });
 
       // Label
       ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.75)';
-      ctx.font = (isCurrent ? 'bold ' : '') + Math.round(24 * nodeScale) + 'px sans-serif';
+      ctx.font = (isCurrent ? 'bold ' : '') + Math.round(24 * nodeScale * zoomScale) + 'px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30 * nodeScale);
+      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30 * nodeScale * zoomScale);
     });
 
     ctx.restore(); // undo zoom/pan transform
