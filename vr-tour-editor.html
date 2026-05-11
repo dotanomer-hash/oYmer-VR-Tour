@@ -1619,28 +1619,18 @@ ${threeJsSrc}
     }).catch(() => {});
   }
 
-  // Gaze system with two orange circles
-  const gazeGroup = new THREE.Group();
-  scene.add(gazeGroup);
-  gazeGroup.visible = false;
-
-  // Inner ring (static, shows you're targeting something)
-  const gazeInnerRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.15, 0.25, 32),
-    new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false })
-  );
-  gazeGroup.add(gazeInnerRing);
-
-  // Outer ring (progress, fills up over dwell time)
-  const gazeRingMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthTest: false });
-  const gazeRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32, 1, 0, 0), gazeRingMat);
-  gazeGroup.add(gazeRing);
+  // Gaze system — clockwise pie fill directly on the hotspot
+  const gazeFillMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false });
+  const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(4.2, 48, -Math.PI / 2, 0.01), gazeFillMat);
+  gazeFillMesh.renderOrder = 998;
+  gazeFillMesh.visible = false;
+  scene.add(gazeFillMesh);
 
   let gazeTarget = null;
   let gazeTimer = 0;
-  let gazeGrace = 0; // grace period: keeps target alive briefly when ray wanders off
-  const GAZE_DWELL = 1.4;   // seconds to activate
-  const GAZE_GRACE = 0.6;   // seconds of forgiveness when ray leaves target
+  let gazeGrace = 0;
+  const GAZE_DWELL = 1.4;
+  const GAZE_GRACE = 0.6;
   let lastFrameTime = performance.now();
 
   function updateGaze() {
@@ -1663,19 +1653,14 @@ ${threeJsSrc}
       if (elapsed > VR_PANEL_COOLDOWN) {
         const panelHits = raycaster.intersectObjects(vrPanelGroup.children);
         if (panelHits.length > 0) {
-          gazeGroup.visible = true;
           if (gazeTarget === vrPanelGroup) {
             gazeTimer += dt;
             gazeGrace = 0;
-            const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-            gazeRing.geometry.dispose();
-            gazeRing.geometry = new THREE.RingGeometry(0.28, 0.38, 32, 1, 0, pct * Math.PI * 2);
-            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGrace = 0; gazeGroup.visible = false; }
+            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGrace = 0; gazeFillMesh.visible = false; }
           } else { gazeTarget = vrPanelGroup; gazeTimer = 0; gazeGrace = 0; }
           return;
         }
       } else {
-        // During cooldown, don't gaze-close but still block hotspot activation behind panel
         return;
       }
     }
@@ -1683,24 +1668,23 @@ ${threeJsSrc}
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
     let hitTarget = hits.length > 0 ? hits[0].object : null;
 
-    // If ray missed but we have a target in grace period, keep it
+    // Grace period: keep target alive briefly when ray wanders off
     if (!hitTarget && gazeTarget && gazeGrace < GAZE_GRACE) {
       gazeGrace += dt;
-      gazeTimer += dt * 0.3; // slow progress during grace (head is drifting)
-      hitTarget = gazeTarget; // pretend we're still on target
+      gazeTimer += dt * 0.3;
+      hitTarget = gazeTarget;
     } else if (hitTarget) {
-      gazeGrace = 0; // ray is on target, reset grace
+      gazeGrace = 0;
     }
 
     if (hitTarget) {
-      // Position gaze ring on the target, facing the camera
-      gazeGroup.position.copy(hitTarget.position);
-      gazeGroup.lookAt(camPos);
-      gazeGroup.visible = true;
-      // Distance from camera to scale rings consistently
-      const dist = camPos.distanceTo(hitTarget.position);
-      const scale = Math.max(1, dist / 80);
-      gazeGroup.scale.set(scale, scale, scale);
+      // Position the pie fill on the hotspot, facing camera, slightly in front
+      gazeFillMesh.position.copy(hitTarget.position);
+      const toCamera = camPos.clone().sub(hitTarget.position).normalize();
+      gazeFillMesh.position.add(toCamera.multiplyScalar(0.5));
+      gazeFillMesh.lookAt(camPos);
+      gazeFillMesh.visible = true;
+
       if (gazeTarget === hitTarget) {
         gazeTimer += dt;
       } else {
@@ -1709,24 +1693,24 @@ ${threeJsSrc}
         gazeGrace = 0;
       }
       const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-      // Always rebuild rings so they're visible from frame 1
-      gazeRing.geometry.dispose();
-      const arc = Math.max(0.08, pct) * Math.PI * 2;
-      gazeRing.geometry = new THREE.RingGeometry(1.4, 1.8, 48, 1, -Math.PI / 2, arc);
-      gazeInnerRing.geometry.dispose();
-      gazeInnerRing.geometry = new THREE.RingGeometry(0.8, 1.2, 32);
+      // Rebuild pie: clockwise sweep from top, opacity increases with progress
+      gazeFillMesh.geometry.dispose();
+      const arc = Math.max(0.05, pct) * Math.PI * 2;
+      gazeFillMesh.geometry = new THREE.CircleGeometry(4.2, 48, -Math.PI / 2, arc);
+      gazeFillMat.opacity = 0.3 + 0.6 * pct;
+
       if (gazeTimer >= GAZE_DWELL) {
         handleHotspotClick(hitTarget.userData);
         gazeTarget = null;
         gazeTimer = 0;
         gazeGrace = 0;
-        gazeGroup.visible = false;
+        gazeFillMesh.visible = false;
       }
     } else {
       gazeTarget = null;
       gazeTimer = 0;
       gazeGrace = 0;
-      gazeGroup.visible = false;
+      gazeFillMesh.visible = false;
     }
   }
 
