@@ -1231,33 +1231,66 @@ ${threeJsSrc}
     setTimeout(() => { loadScene(id); lon = 0; lat = 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
   }
 
-  // Pointer (mouse + touch + pen) — listen on document so nothing can swallow drag events.
-  // Skip when starting on UI overlays so they remain interactive.
+  // === Input: mouse/touch drag for desktop + device orientation for Quest flat mode ===
   function isOverUI(el) {
     return el && (el.closest('#sidebar') || el.closest('#sidebar-toggle') || el.closest('#info-modal') || el.closest('#vr-button') || el.closest('#minimap') || el.closest('.viewer-hotspot'));
   }
-  document.addEventListener('pointerdown', e => {
+
+  // Mouse drag (desktop)
+  renderer.domElement.addEventListener('mousedown', e => {
     if (renderer.xr.isPresenting) return;
     if (isOverUI(e.target)) return;
-    e.preventDefault();
     pointerDown = true; pointerMoved = false;
     startX = lastX = e.clientX; startY = lastY = e.clientY;
-    try { renderer.domElement.setPointerCapture && renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  document.addEventListener('pointermove', e => {
+  document.addEventListener('mousemove', e => {
     if (!pointerDown || renderer.xr.isPresenting) return;
-    e.preventDefault();
     if (Math.abs(e.clientX-startX)>5||Math.abs(e.clientY-startY)>5) pointerMoved = true;
     lon -= (e.clientX - lastX) * 0.25;
     lat += (e.clientY - lastY) * 0.25;
     lat = Math.max(-85, Math.min(85, lat));
     lastX = e.clientX; lastY = e.clientY;
   });
-  function endPointer() { pointerDown = false; }
-  document.addEventListener('pointerup', endPointer);
-  document.addEventListener('pointercancel', endPointer);
-  document.addEventListener('pointerleave', endPointer);
-  // Prevent touch scrolling from hijacking the canvas
+  document.addEventListener('mouseup', () => { pointerDown = false; });
+
+  // Touch drag (mobile / Quest flat mode fallback)
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (renderer.xr.isPresenting || e.touches.length !== 1) return;
+    if (isOverUI(e.target)) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    pointerDown = true; pointerMoved = false;
+    startX = lastX = t.clientX; startY = lastY = t.clientY;
+  }, { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (!pointerDown || renderer.xr.isPresenting || e.touches.length !== 1) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    if (Math.abs(t.clientX-startX)>5||Math.abs(t.clientY-startY)>5) pointerMoved = true;
+    lon -= (t.clientX - lastX) * 0.25;
+    lat += (t.clientY - lastY) * 0.25;
+    lat = Math.max(-85, Math.min(85, lat));
+    lastX = t.clientX; lastY = t.clientY;
+  }, { passive: false });
+  document.addEventListener('touchend', () => { pointerDown = false; });
+  document.addEventListener('touchcancel', () => { pointerDown = false; });
+
+  // Device orientation — lets Quest 3 flat-mode users look around by moving their head
+  let orientBase = null;
+  let useOrientation = false;
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', e => {
+      if (renderer.xr.isPresenting || pointerDown) return;
+      if (e.alpha === null) return; // no sensor
+      if (!orientBase) { orientBase = { a: e.alpha, b: e.beta, g: e.gamma }; useOrientation = true; }
+      lon = -(e.gamma - orientBase.g) * 2;
+      lat = (e.beta - orientBase.b - 20) * 1.2; // -20 offset so natural head tilt centers the view
+      lat = Math.max(-85, Math.min(85, lat));
+    });
+    // Reset orientation baseline on tap (so you re-center by tapping)
+    renderer.domElement.addEventListener('click', () => { if (useOrientation) orientBase = null; });
+  }
+
   renderer.domElement.style.touchAction = 'none';
 
   // Hotspot projection
