@@ -1614,9 +1614,10 @@ ${threeJsSrc}
   // Track trigger for pan mode
   var mapTriggerHeld = false;
   var mapDragStart = null;
-  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; } });
+  var mapDidDrag = false; // true if user moved while trigger held (prevents click-navigate)
+  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
   controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
-  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; } });
+  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
   controller2.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
 
   function onVRSelect(event) {
@@ -1633,13 +1634,18 @@ ${threeJsSrc}
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
     }
 
-    // If minimap is ACTIVE (enlarged), clicks on it navigate scenes
-    if (vrMinimapActive && vrMinimapMesh.visible) {
-      const mapHits = raycaster.intersectObject(vrMinimapMesh);
-      if (mapHits.length > 0) {
-        handleVRMinimapClick(mapHits[0].uv);
+    // If minimap is ACTIVE (enlarged):
+    // - Trigger click (no drag) on scene node → navigate
+    // - Trigger drag → pan (handled in animate loop)
+    // - Grip → exit map (handled in onGrip)
+    // - Never exit map from trigger
+    if (vrMinimapActive) {
+      if (!mapDidDrag) {
+        const mapHits = raycaster.intersectObject(vrMinimapMesh);
+        if (mapHits.length > 0) {
+          handleVRMinimapClick(mapHits[0].uv);
+        }
       }
-      // Use grip button to exit map, not click outside
       return;
     }
 
@@ -2043,12 +2049,11 @@ ${threeJsSrc}
     }
     if (closest && closestDist < 80) {
       goToScene(closest.id);
-      setTimeout(() => deactivateVRMinimap(), 500);
+      drawVRMinimap(); // redraw to highlight new current scene
       return true;
     }
-    // Clicked minimap but not on a node — deactivate
-    deactivateVRMinimap();
-    return true;
+    // Clicked empty space — do nothing (grip exits map)
+    return false;
   }
 
   function updateVRMinimapPosition() {
@@ -2149,9 +2154,12 @@ ${threeJsSrc}
             if (mapDragStart) {
               const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 0.3;
               const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 0.3;
-              mapPanX += dx;
-              mapPanY += dy;
-              mapNeedsRedraw = true;
+              if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                mapPanX += dx;
+                mapPanY += dy;
+                mapDidDrag = true;
+                mapNeedsRedraw = true;
+              }
             }
             mapDragStart = pos.clone();
           } else {
