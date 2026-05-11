@@ -1775,8 +1775,8 @@ ${threeJsSrc}
       if (dist < closestDist) { closestDist = dist; closest = s; }
     }
     if (closest && closestDist < 80) {
-      deactivateVRMinimap();
       goToScene(closest.id);
+      setTimeout(() => deactivateVRMinimap(), 500);
       return true;
     }
     // Clicked minimap but not on a node — deactivate
