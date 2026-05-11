@@ -1015,7 +1015,7 @@ ${threeJsSrc}
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(15, 16),
+        new THREE.CircleGeometry(35, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
@@ -1592,7 +1592,9 @@ ${threeJsSrc}
 
   let gazeTarget = null;
   let gazeTimer = 0;
-  const GAZE_DWELL = 2.0;
+  let gazeGrace = 0; // grace period: keeps target alive briefly when ray wanders off
+  const GAZE_DWELL = 1.8;   // seconds to activate
+  const GAZE_GRACE = 0.6;   // seconds of forgiveness when ray leaves target
   let lastFrameTime = performance.now();
 
   function updateGaze() {
@@ -1618,11 +1620,12 @@ ${threeJsSrc}
           gazeGroup.visible = true;
           if (gazeTarget === vrPanelGroup) {
             gazeTimer += dt;
+            gazeGrace = 0;
             const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
             gazeRing.geometry.dispose();
             gazeRing.geometry = new THREE.RingGeometry(0.28, 0.38, 32, 1, 0, pct * Math.PI * 2);
-            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGroup.visible = false; }
-          } else { gazeTarget = vrPanelGroup; gazeTimer = 0; }
+            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGrace = 0; gazeGroup.visible = false; }
+          } else { gazeTarget = vrPanelGroup; gazeTimer = 0; gazeGrace = 0; }
           return;
         }
       } else {
@@ -1632,38 +1635,51 @@ ${threeJsSrc}
     }
 
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
-    if (hits.length > 0) {
-      const target = hits[0].object;
-      // Position gaze ring on the hotspot, facing the camera
-      gazeGroup.position.copy(target.position);
+    let hitTarget = hits.length > 0 ? hits[0].object : null;
+
+    // If ray missed but we have a target in grace period, keep it
+    if (!hitTarget && gazeTarget && gazeGrace < GAZE_GRACE) {
+      gazeGrace += dt;
+      gazeTimer += dt * 0.3; // slow progress during grace (head is drifting)
+      hitTarget = gazeTarget; // pretend we're still on target
+    } else if (hitTarget) {
+      gazeGrace = 0; // ray is on target, reset grace
+    }
+
+    if (hitTarget) {
+      // Position gaze ring on the target, facing the camera
+      gazeGroup.position.copy(hitTarget.position);
       gazeGroup.lookAt(camPos);
       gazeGroup.visible = true;
       // Distance from camera to scale rings consistently
-      const dist = camPos.distanceTo(target.position);
-      const scale = Math.max(1, dist / 30); // tuned so rings look the same size at any distance
+      const dist = camPos.distanceTo(hitTarget.position);
+      const scale = Math.max(1, dist / 30);
       gazeGroup.scale.set(scale, scale, scale);
-      if (gazeTarget === target) {
+      if (gazeTarget === hitTarget) {
         gazeTimer += dt;
       } else {
-        gazeTarget = target;
+        gazeTarget = hitTarget;
         gazeTimer = 0;
+        gazeGrace = 0;
       }
       const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-      // Always rebuild rings so they're visible from frame 1; show a minimum arc so progress is visible immediately
+      // Always rebuild rings so they're visible from frame 1
       gazeRing.geometry.dispose();
-      const arc = Math.max(0.05, pct) * Math.PI * 2;
+      const arc = Math.max(0.08, pct) * Math.PI * 2;
       gazeRing.geometry = new THREE.RingGeometry(3.5, 4.5, 48, 1, -Math.PI / 2, arc);
       gazeInnerRing.geometry.dispose();
       gazeInnerRing.geometry = new THREE.RingGeometry(2, 3, 32);
       if (gazeTimer >= GAZE_DWELL) {
-        handleHotspotClick(target.userData);
+        handleHotspotClick(hitTarget.userData);
         gazeTarget = null;
         gazeTimer = 0;
+        gazeGrace = 0;
         gazeGroup.visible = false;
       }
     } else {
       gazeTarget = null;
       gazeTimer = 0;
+      gazeGrace = 0;
       gazeGroup.visible = false;
     }
   }
