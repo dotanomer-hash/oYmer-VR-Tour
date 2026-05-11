@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR Test</title>
+<style>
+  body { margin: 0; background: #000; overflow: hidden; }
+  #info { position: fixed; top: 20px; left: 20px; color: #fff; font-family: sans-serif; font-size: 16px; z-index: 100; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; }
+  #vr-btn { position: fixed; bottom: 20px; right: 20px; background: #ff7a00; border: none; color: #fff; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; z-index: 100; display: none; }
+</style>
+</head>
+<body>
+<div id="info">Loading Three.js...</div>
+<button id="vr-btn">Enter VR</button>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(function(){
+  const info = document.getElementById('info');
+  info.textContent = 'Three.js loaded. Setting up scene...';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local');
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+
+  // Big colored sphere around the viewer (like a panorama would be)
+  const geo = new THREE.SphereGeometry(50, 32, 16);
+  geo.scale(-1, 1, 1);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff7a00 });
+  const sphere = new THREE.Mesh(geo, mat);
+  scene.add(sphere);
+
+  // Small cube floating in front for reference
+  const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+  const cubeMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  const cube = new THREE.Mesh(cubeGeo, cubeMat);
+  cube.position.set(0, 0, -5);
+  scene.add(cube);
+
+  info.textContent = 'Scene ready. Checking WebXR...';
+
+  // WebXR
+  if (navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-vr').then(function(supported) {
+      if (supported) {
+        info.textContent = 'WebXR supported! Tap Enter VR.';
+        const btn = document.getElementById('vr-btn');
+        btn.style.display = 'block';
+        btn.addEventListener('click', function() {
+          btn.textContent = 'Starting...';
+          navigator.xr.requestSession('immersive-vr').then(function(session) {
+            renderer.xr.setSession(session);
+            btn.textContent = 'In VR!';
+            info.textContent = 'VR session active!';
+            session.addEventListener('end', function() {
+              btn.textContent = 'Enter VR';
+              info.textContent = 'VR session ended.';
+            });
+          }).catch(function(err) {
+            btn.textContent = 'Error!';
+            info.textContent = 'VR Error: ' + err.message;
+          });
+        });
+      } else {
+        info.textContent = 'WebXR: immersive-vr NOT supported on this browser.';
+      }
+    }).catch(function(err) {
+      info.textContent = 'WebXR check failed: ' + err.message;
+    });
+  } else {
+    info.textContent = 'navigator.xr not available. Need HTTPS!';
+  }
+
+  // Render
+  renderer.setAnimationLoop(function() {
+    cube.rotation.y += 0.01;
+    if (!renderer.xr.isPresenting) {
+      camera.lookAt(0, 0, -5);
+    }
+    renderer.render(scene, camera);
+  });
+
+  window.addEventListener('resize', function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+</script>
+</body>
+</html>
