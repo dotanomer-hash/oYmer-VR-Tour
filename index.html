@@ -1231,21 +1231,32 @@ ${threeJsSrc}
     setTimeout(() => { loadScene(id); lon = 0; lat = 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
   }
 
-  // Pointer — mousedown on canvas, mousemove/mouseup on document to prevent sticking
-  renderer.domElement.addEventListener('mousedown', e => {
-    if (e.target.closest('#sidebar') || e.target.closest('#sidebar-toggle') || e.target.closest('#info-modal') || e.target.closest('#vr-button') || e.target.closest('#minimap')) return;
+  // Pointer (mouse + touch + pen) — listen on document so nothing can swallow drag events.
+  // Skip when starting on UI overlays so they remain interactive.
+  function isOverUI(el) {
+    return el && (el.closest('#sidebar') || el.closest('#sidebar-toggle') || el.closest('#info-modal') || el.closest('#vr-button') || el.closest('#minimap') || el.closest('.viewer-hotspot'));
+  }
+  document.addEventListener('pointerdown', e => {
+    if (renderer.xr.isPresenting) return;
+    if (isOverUI(e.target)) return;
     pointerDown = true; pointerMoved = false;
     startX = lastX = e.clientX; startY = lastY = e.clientY;
+    try { renderer.domElement.setPointerCapture && renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
   });
-  document.addEventListener('mousemove', e => {
-    if (!pointerDown) return;
+  document.addEventListener('pointermove', e => {
+    if (!pointerDown || renderer.xr.isPresenting) return;
     if (Math.abs(e.clientX-startX)>5||Math.abs(e.clientY-startY)>5) pointerMoved = true;
-    lon -= (e.clientX - lastX) * 0.2;
-    lat += (e.clientY - lastY) * 0.2;
-    lat = Math.max(-55, Math.min(55, lat));
+    lon -= (e.clientX - lastX) * 0.25;
+    lat += (e.clientY - lastY) * 0.25;
+    lat = Math.max(-85, Math.min(85, lat));
     lastX = e.clientX; lastY = e.clientY;
   });
-  document.addEventListener('mouseup', () => { pointerDown = false; });
+  function endPointer() { pointerDown = false; }
+  document.addEventListener('pointerup', endPointer);
+  document.addEventListener('pointercancel', endPointer);
+  document.addEventListener('pointerleave', endPointer);
+  // Prevent touch scrolling from hijacking the canvas
+  renderer.domElement.style.touchAction = 'none';
 
   // Hotspot projection
   function updateHotspots() {
