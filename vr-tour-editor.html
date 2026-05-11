@@ -1870,8 +1870,8 @@ ${threeJsSrc}
     ctx.save();
     if (activeMode && mapZoom > 1) {
       // Clamp pan so we don't scroll off the image
-      const maxPanX = (W * (mapZoom - 1)) / 2;
-      const maxPanY = (H * (mapZoom - 1)) / 2;
+      const maxPanX = (W * (mapZoom - 1)) / (2 * mapZoom);
+      const maxPanY = (H * (mapZoom - 1)) / (2 * mapZoom);
       mapPanX = Math.max(-maxPanX, Math.min(maxPanX, mapPanX));
       mapPanY = Math.max(-maxPanY, Math.min(maxPanY, mapPanY));
       // Zoom centered on canvas with pan offset
@@ -1910,7 +1910,7 @@ ${threeJsSrc}
     const nodeScale = Math.max(1, W / 512); // scale markers for higher-res canvas
 
     // Scale down markers when zoomed in so they stay proportional
-    const zoomScale = activeMode && mapZoom > 1 ? 1 / mapZoom : 1;
+    const zoomScale = activeMode && mapZoom > 1 ? 1 / (mapZoom * mapZoom) : 1;
 
     // Connection lines
     ctx.lineWidth = 3 * nodeScale * zoomScale;
@@ -2151,8 +2151,10 @@ ${threeJsSrc}
                 const oldZoom = mapZoom;
                 mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.04));
                 if (Math.abs(mapZoom - oldZoom) > 0.001) {
-                  // Scale pan to keep the current view point anchored
-                  if (oldZoom > 1) {
+                  if (mapZoom <= 1) {
+                    mapPanX = 0;
+                    mapPanY = 0;
+                  } else if (oldZoom > 1) {
                     mapPanX = mapPanX * (mapZoom / oldZoom);
                     mapPanY = mapPanY * (mapZoom / oldZoom);
                   }
