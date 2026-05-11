@@ -1791,50 +1791,91 @@ ${threeJsSrc}
 
   // VR Minimap HUD (3D plane with canvas texture)
   const vrMinimapCanvas = document.createElement('canvas');
-  vrMinimapCanvas.width = 512;
-  vrMinimapCanvas.height = 512;
+  // Use high-res canvas matching floor plan aspect ratio
+  let mapAspect = 1189 / 841; // A0 default (height/width ≈ 1.414)
+  let mapCanvasW = 2048;
+  let mapCanvasH = 2048;
+  if (minimapFloorImg) {
+    const waitForImg = () => {
+      if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
+        mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
+        // Use full image resolution up to 4096 limit
+        mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
+        mapCanvasH = Math.round(mapCanvasW * mapAspect);
+        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+        vrMinimapCanvas.width = mapCanvasW;
+        vrMinimapCanvas.height = mapCanvasH;
+        drawVRMinimap();
+      } else {
+        setTimeout(waitForImg, 100);
+      }
+    };
+    waitForImg();
+  }
+  vrMinimapCanvas.width = mapCanvasW;
+  vrMinimapCanvas.height = mapCanvasH;
   const vrMinimapTex = new THREE.CanvasTexture(vrMinimapCanvas);
+  vrMinimapTex.minFilter = THREE.LinearFilter;
+  vrMinimapTex.magFilter = THREE.LinearFilter;
+  const MINIMAP_SMALL_W = 0.8;
+  const MINIMAP_SMALL_H = 0.8 * mapAspect;
   const vrMinimapMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.2, 1.2),
+    new THREE.PlaneGeometry(MINIMAP_SMALL_W, MINIMAP_SMALL_H),
     new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapMesh.renderOrder = 999;
   scene.add(vrMinimapMesh);
   vrMinimapMesh.visible = false;
   let vrMinimapActive = false; // when true, minimap is enlarged and interactive
+  let mapZoom = 1.0;
+  let mapPanX = 0, mapPanY = 0; // pan offset in canvas coords
 
   function drawVRMinimap() {
     const ctx = vrMinimapCanvas.getContext('2d');
     const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
     ctx.clearRect(0, 0, W, H);
 
+    const activeMode = vrMinimapActive;
+    const sc = activeMode ? mapZoom : 1;
+
+    ctx.save();
+    if (activeMode && (mapZoom !== 1 || mapPanX !== 0 || mapPanY !== 0)) {
+      ctx.translate(W / 2 + mapPanX, H / 2 + mapPanY);
+      ctx.scale(sc, sc);
+      ctx.translate(-W / 2, -H / 2);
+    }
+
     // Background: floor plan or dark box
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(10, 10, W - 20, H - 20, 24);
+    ctx.roundRect(4, 4, W - 8, H - 8, 12);
     ctx.clip();
     if (minimapFloorImg && minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
-      ctx.drawImage(minimapFloorImg, 10, 10, W - 20, H - 20);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.fillRect(10, 10, W - 20, H - 20);
+      ctx.drawImage(minimapFloorImg, 0, 0, W, H);
+      // Only dim slightly when not active — full brightness when zoomed in
+      if (!activeMode) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+        ctx.fillRect(0, 0, W, H);
+      }
     } else {
       ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
-      ctx.fillRect(10, 10, W - 20, H - 20);
+      ctx.fillRect(0, 0, W, H);
     }
     ctx.restore();
     ctx.beginPath();
-    ctx.roundRect(10, 10, W - 20, H - 20, 24);
+    ctx.roundRect(4, 4, W - 8, H - 8, 12);
     ctx.strokeStyle = 'rgba(255,122,0,0.5)';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = activeMode ? 6 : 3;
     ctx.stroke();
 
     const scenes = TOUR.scenes;
-    if (!scenes.length) return;
-    const pad = 60;
+    if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
+    const pad = Math.max(40, W * 0.04);
     const positions = getScenePositions(W, H, pad);
+    const nodeScale = Math.max(1, W / 512); // scale markers for higher-res canvas
 
     // Connection lines
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * nodeScale;
     scenes.forEach(s => {
       s.hotspots.forEach(hs => {
         if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
@@ -1850,30 +1891,29 @@ ${threeJsSrc}
     });
 
     // Scene nodes
-    const activeMode = vrMinimapActive;
     scenes.forEach(s => {
       const p = positions[s.id];
       const isCurrent = s.id === currentSceneId;
-      const r = isCurrent ? 32 : 24;
+      const r = (isCurrent ? 32 : 24) * nodeScale;
 
       // Pulsing click target ring when active
       if (activeMode && !isCurrent) {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 2 * nodeScale;
+        ctx.setLineDash([6 * nodeScale, 4 * nodeScale]);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r + 12, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, r + 12 * nodeScale, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
-      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20; }
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.8)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = isCurrent ? 3 : 2;
+      ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -1881,49 +1921,71 @@ ${threeJsSrc}
       s.hotspots.forEach((hs, hi) => {
         const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(p.x + (r + 12) * Math.cos(a), p.y + (r + 12) * Math.sin(a), 5, 0, Math.PI * 2);
+        ctx.arc(p.x + (r + 12 * nodeScale) * Math.cos(a), p.y + (r + 12 * nodeScale) * Math.sin(a), 5 * nodeScale, 0, Math.PI * 2);
         ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
         ctx.fill();
       });
 
       // Label
       ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.75)';
-      ctx.font = (isCurrent ? 'bold ' : '') + '24px sans-serif';
+      ctx.font = (isCurrent ? 'bold ' : '') + Math.round(24 * nodeScale) + 'px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30);
+      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30 * nodeScale);
     });
 
+    ctx.restore(); // undo zoom/pan transform
+
+    // Header — always on top, not affected by zoom
     ctx.fillStyle = 'rgba(255,122,0,0.9)';
-    ctx.font = 'bold 22px sans-serif';
+    ctx.font = 'bold ' + Math.round(22 * Math.max(1, W / 512)) + 'px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('PLAN VIEW', 24, 38);
+
+    // Zoom indicator when active and zoomed
+    if (activeMode && mapZoom !== 1) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(W - 180, 10, 170, 36);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('Zoom: ' + mapZoom.toFixed(1) + 'x', W - 20, 34);
+    }
 
     vrMinimapTex.needsUpdate = true;
   }
 
   function activateVRMinimap() {
     vrMinimapActive = true;
+    mapZoom = 1.0;
+    mapPanX = 0;
+    mapPanY = 0;
     vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(4, 4);
-    vrMinimapMesh.material.opacity = 0.95;
+    // Large plane that almost fills the view — respect PDF aspect ratio
+    const bigW = 6;
+    const bigH = bigW * mapAspect;
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
+    vrMinimapMesh.material.opacity = 0.97;
     vrMinimapMesh.material.depthTest = true;
     vrMinimapMesh.material.depthWrite = true;
     drawVRMinimap();
-    // Position centered in front of viewer at arm's length
+    // Position centered in front of viewer
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
     const camDir = new THREE.Vector3();
     xrCam.getWorldPosition(camPos);
     xrCam.getWorldDirection(camDir);
-    vrMinimapMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(2.5));
+    vrMinimapMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(3.5));
     vrMinimapMesh.lookAt(camPos);
     vrMinimapMesh.updateMatrixWorld(true);
   }
 
   function deactivateVRMinimap() {
     vrMinimapActive = false;
+    mapZoom = 1.0;
+    mapPanX = 0;
+    mapPanY = 0;
     vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(1.2, 1.2);
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(MINIMAP_SMALL_W, MINIMAP_SMALL_H);
     vrMinimapMesh.material.opacity = 0.85;
     vrMinimapMesh.material.depthTest = false;
     vrMinimapMesh.material.depthWrite = false;
@@ -2028,6 +2090,27 @@ ${threeJsSrc}
         vrMinimapMesh.visible = !vrMinimapHidden;
         if (!vrMinimapHidden) updateVRMinimapPosition();
         updateRayDots();
+
+        // Thumbstick zoom/pan when map is active
+        if (vrMinimapActive) {
+          const session = renderer.xr.getSession();
+          if (session) {
+            for (const src of session.inputSources) {
+              if (src.gamepad && src.gamepad.axes.length >= 4) {
+                const ax = src.gamepad.axes[2]; // thumbstick X
+                const ay = src.gamepad.axes[3]; // thumbstick Y
+                if (Math.abs(ay) > 0.15) {
+                  mapZoom = Math.max(0.5, Math.min(5, mapZoom - ay * 0.04));
+                  drawVRMinimap();
+                }
+                if (Math.abs(ax) > 0.15) {
+                  mapPanX += ax * 8 * mapZoom;
+                  drawVRMinimap();
+                }
+              }
+            }
+          }
+        }
       }
       renderer.render(scene, camera);
       if (!renderer.xr.isPresenting) updateHotspots();
