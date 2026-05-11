@@ -1222,19 +1222,20 @@ ${threeJsSrc}
       if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.7)';
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(200, 140, 60, 0.7)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
       ctx.lineWidth = isCurrent ? 2 : 1;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Hotspot dots
-      s.hotspots.forEach((hs, hi) => {
-        const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
+      // Nav hotspot dots only
+      const navHs = s.hotspots.filter(h => h.type === 'nav');
+      navHs.forEach((hs, hi) => {
+        const a = (hi / navHs.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
         ctx.arc(p.x + (r + 6) * Math.cos(a), p.y + (r + 6) * Math.sin(a), 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        ctx.fillStyle = '#ff7a00';
         ctx.fill();
       });
 
@@ -1642,20 +1643,16 @@ ${threeJsSrc}
     }
 
     // If minimap is ACTIVE (enlarged):
-    // - Double-click trigger on scene node → navigate
-    // - Single trigger drag → pan (handled in animate loop)
+    // - Trigger click (no drag) on scene node → navigate
+    // - Trigger drag → pan (handled in animate loop)
     // - Grip → exit map (handled in onGrip)
+    // - Never exit map from trigger
     if (vrMinimapActive) {
-      const now = performance.now();
-      if (now - mapLastClick < 500) {
-        // Double click — navigate to scene
+      if (!mapDidDrag) {
         const mapHits = raycaster.intersectObject(vrMinimapMesh);
         if (mapHits.length > 0) {
           handleVRMinimapClick(mapHits[0].uv);
         }
-        mapLastClick = 0;
-      } else {
-        mapLastClick = now;
       }
       return;
     }
@@ -1956,7 +1953,7 @@ ${threeJsSrc}
       if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale * zoomScale; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.8)';
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(200, 140, 60, 0.8)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
       ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale * zoomScale;
