@@ -1617,7 +1617,8 @@ ${threeJsSrc}
   // Track trigger for pan mode
   var mapTriggerHeld = false;
   var mapDragStart = null;
-  var mapDidDrag = false; // true if user moved while trigger held (prevents click-navigate)
+  var mapDidDrag = false;
+  var mapLastClick = 0; // timestamp for double-click detection
   controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
   controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
   controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
@@ -1638,16 +1639,20 @@ ${threeJsSrc}
     }
 
     // If minimap is ACTIVE (enlarged):
-    // - Trigger click (no drag) on scene node → navigate
-    // - Trigger drag → pan (handled in animate loop)
+    // - Double-click trigger on scene node → navigate
+    // - Single trigger drag → pan (handled in animate loop)
     // - Grip → exit map (handled in onGrip)
-    // - Never exit map from trigger
     if (vrMinimapActive) {
-      if (!mapDidDrag) {
+      const now = performance.now();
+      if (now - mapLastClick < 500) {
+        // Double click — navigate to scene
         const mapHits = raycaster.intersectObject(vrMinimapMesh);
         if (mapHits.length > 0) {
           handleVRMinimapClick(mapHits[0].uv);
         }
+        mapLastClick = 0;
+      } else {
+        mapLastClick = now;
       }
       return;
     }
