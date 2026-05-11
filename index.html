@@ -1794,17 +1794,37 @@ ${threeJsSrc}
   // Use high-res canvas matching floor plan aspect ratio
   let mapAspect = 1189 / 841; // A0 default (height/width ≈ 1.414)
   let mapCanvasW = 2048;
-  let mapCanvasH = 2048;
+  let mapCanvasH = Math.round(2048 * mapAspect);
+  vrMinimapCanvas.width = mapCanvasW;
+  vrMinimapCanvas.height = mapCanvasH;
+  const vrMinimapTex = new THREE.CanvasTexture(vrMinimapCanvas);
+  vrMinimapTex.minFilter = THREE.LinearFilter;
+  vrMinimapTex.magFilter = THREE.LinearFilter;
+  const vrMinimapMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.8, 0.8 * mapAspect),
+    new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapMesh.renderOrder = 999;
+  scene.add(vrMinimapMesh);
+  vrMinimapMesh.visible = false;
+  let vrMinimapActive = false;
+  let mapZoom = 1.0;
+  let mapPanX = 0, mapPanY = 0;
+  let mapNeedsRedraw = false;
+
+  // Update canvas and geometry when floor plan image loads
   if (minimapFloorImg) {
     const waitForImg = () => {
       if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
         mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
-        // Use full image resolution up to 4096 limit
         mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
         mapCanvasH = Math.round(mapCanvasW * mapAspect);
         if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
         vrMinimapCanvas.width = mapCanvasW;
         vrMinimapCanvas.height = mapCanvasH;
+        // Rebuild geometry with correct aspect ratio
+        vrMinimapMesh.geometry.dispose();
+        vrMinimapMesh.geometry = new THREE.PlaneGeometry(0.8, 0.8 * mapAspect);
         drawVRMinimap();
       } else {
         setTimeout(waitForImg, 100);
@@ -1812,23 +1832,6 @@ ${threeJsSrc}
     };
     waitForImg();
   }
-  vrMinimapCanvas.width = mapCanvasW;
-  vrMinimapCanvas.height = mapCanvasH;
-  const vrMinimapTex = new THREE.CanvasTexture(vrMinimapCanvas);
-  vrMinimapTex.minFilter = THREE.LinearFilter;
-  vrMinimapTex.magFilter = THREE.LinearFilter;
-  const MINIMAP_SMALL_W = 0.8;
-  const MINIMAP_SMALL_H = 0.8 * mapAspect;
-  const vrMinimapMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(MINIMAP_SMALL_W, MINIMAP_SMALL_H),
-    new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
-  );
-  vrMinimapMesh.renderOrder = 999;
-  scene.add(vrMinimapMesh);
-  vrMinimapMesh.visible = false;
-  let vrMinimapActive = false; // when true, minimap is enlarged and interactive
-  let mapZoom = 1.0;
-  let mapPanX = 0, mapPanY = 0; // pan offset in canvas coords
 
   function drawVRMinimap() {
     const ctx = vrMinimapCanvas.getContext('2d');
@@ -1836,12 +1839,17 @@ ${threeJsSrc}
     ctx.clearRect(0, 0, W, H);
 
     const activeMode = vrMinimapActive;
-    const sc = activeMode ? mapZoom : 1;
 
     ctx.save();
-    if (activeMode && (mapZoom !== 1 || mapPanX !== 0 || mapPanY !== 0)) {
+    if (activeMode && mapZoom > 1) {
+      // Clamp pan so we don't scroll off the image
+      const maxPanX = (W * (mapZoom - 1)) / 2;
+      const maxPanY = (H * (mapZoom - 1)) / 2;
+      mapPanX = Math.max(-maxPanX, Math.min(maxPanX, mapPanX));
+      mapPanY = Math.max(-maxPanY, Math.min(maxPanY, mapPanY));
+      // Zoom centered on canvas with pan offset
       ctx.translate(W / 2 + mapPanX, H / 2 + mapPanY);
-      ctx.scale(sc, sc);
+      ctx.scale(mapZoom, mapZoom);
       ctx.translate(-W / 2, -H / 2);
     }
 
@@ -1985,7 +1993,7 @@ ${threeJsSrc}
     mapPanX = 0;
     mapPanY = 0;
     vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(MINIMAP_SMALL_W, MINIMAP_SMALL_H);
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(0.8, 0.8 * mapAspect);
     vrMinimapMesh.material.opacity = 0.85;
     vrMinimapMesh.material.depthTest = false;
     vrMinimapMesh.material.depthWrite = false;
@@ -2092,22 +2100,36 @@ ${threeJsSrc}
         updateRayDots();
 
         // Thumbstick zoom/pan when map is active
+        // Left stick: pan, Right stick: zoom (Y axis)
         if (vrMinimapActive) {
           const session = renderer.xr.getSession();
           if (session) {
-            for (const src of session.inputSources) {
-              if (src.gamepad && src.gamepad.axes.length >= 4) {
-                const ax = src.gamepad.axes[2]; // thumbstick X
-                const ay = src.gamepad.axes[3]; // thumbstick Y
+            const sources = Array.from(session.inputSources).filter(s => s.gamepad && s.gamepad.axes.length >= 4);
+            // Use handedness to distinguish sticks: left=pan, right=zoom
+            for (const src of sources) {
+              const ax = src.gamepad.axes[2];
+              const ay = src.gamepad.axes[3];
+              if (src.handedness === 'right') {
+                // Right thumbstick Y = zoom
                 if (Math.abs(ay) > 0.15) {
-                  mapZoom = Math.max(0.5, Math.min(5, mapZoom - ay * 0.04));
-                  drawVRMinimap();
+                  mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.05));
+                  mapNeedsRedraw = true;
                 }
+              } else {
+                // Left thumbstick = pan
                 if (Math.abs(ax) > 0.15) {
-                  mapPanX += ax * 8 * mapZoom;
-                  drawVRMinimap();
+                  mapPanX += ax * 12;
+                  mapNeedsRedraw = true;
+                }
+                if (Math.abs(ay) > 0.15) {
+                  mapPanY += ay * 12;
+                  mapNeedsRedraw = true;
                 }
               }
+            }
+            if (mapNeedsRedraw) {
+              mapNeedsRedraw = false;
+              drawVRMinimap();
             }
           }
         }
