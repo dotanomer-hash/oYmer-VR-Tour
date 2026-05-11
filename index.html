@@ -203,9 +203,10 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 <!-- Hidden file inputs -->
 <input type="file" id="file-scene" accept="image/*" multiple style="display:none">
 <input type="file" id="file-load" accept=".json" style="display:none">
-<input type="file" id="file-floorplan" accept="image/*" style="display:none">
+<input type="file" id="file-floorplan" accept="image/*,.pdf" style="display:none">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 (function() {
   'use strict';
@@ -213,6 +214,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   // Cache Three.js source for offline export
   let __THREE_SRC__ = '';
   let exportFileHandle = null;
+  if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   (function cacheThreeJs() {
     const scriptEl = document.querySelector('script[src*="three"]');
     if (scriptEl && scriptEl.src) {
@@ -2011,26 +2013,43 @@ ${threeJsSrc}
     drawFloorPlan();
   });
 
-  fileFloorplan.addEventListener('change', (e) => {
+  function setFloorPlanAndDraw(dataUrl) {
+    state.floorPlan = dataUrl;
+    loadFloorPlanImage(() => {
+      const unplaced = state.scenes.filter(s => s.planX == null);
+      if (unplaced.length === state.scenes.length && unplaced.length > 0) {
+        const cols = Math.ceil(Math.sqrt(unplaced.length));
+        unplaced.forEach((s, i) => {
+          s.planX = ((i % cols) + 0.5) / cols;
+          s.planY = (Math.floor(i / cols) + 0.5) / Math.ceil(unplaced.length / cols);
+        });
+      }
+      drawFloorPlan();
+    });
+  }
+
+  fileFloorplan.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      state.floorPlan = ev.target.result;
-      loadFloorPlanImage(() => {
-        // Auto-distribute scenes if none are placed
-        const unplaced = state.scenes.filter(s => s.planX == null);
-        if (unplaced.length === state.scenes.length && unplaced.length > 0) {
-          const cols = Math.ceil(Math.sqrt(unplaced.length));
-          unplaced.forEach((s, i) => {
-            s.planX = ((i % cols) + 0.5) / cols;
-            s.planY = (Math.floor(i / cols) + 0.5) / Math.ceil(unplaced.length / cols);
-          });
-        }
-        drawFloorPlan();
-      });
-    };
-    reader.readAsDataURL(file);
+
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      // Render PDF first page to image
+      const arrayBuf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+      const page = await pdf.getPage(1);
+      const scale = 2;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      setFloorPlanAndDraw(canvas.toDataURL('image/png'));
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => setFloorPlanAndDraw(ev.target.result);
+      reader.readAsDataURL(file);
+    }
     fileFloorplan.value = '';
   });
 
