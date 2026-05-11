@@ -48,6 +48,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .hotspot-overlay.selected { border-color: #fff; box-shadow: 0 0 12px #ff7a00; }
 .hotspot-overlay.info { border-color: #5aaeff; background: rgba(90,174,255,0.3); }
 .hotspot-overlay.media { border-color: #4ecdc4; background: rgba(78,205,196,0.3); }
+.hotspot-overlay.floor-placement { border-style: dashed; transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); }
+.hotspot-overlay.floor-placement:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
 
 /* Right panel - properties */
 #props-panel { width: 240px; background: #0f3460; border-left: 1px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
@@ -64,6 +66,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .type-buttons button.active-nav { background: #ff7a00; border-color: #ff7a00; color: #fff; }
 .type-buttons button.active-info { background: #5aaeff; border-color: #5aaeff; color: #fff; }
 .type-buttons button.active-media { background: #4ecdc4; border-color: #4ecdc4; color: #fff; }
+.placement-buttons button.active-placement { background: #8855cc; border-color: #8855cc; color: #fff; }
 
 /* Icon picker */
 .icon-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
@@ -138,6 +141,12 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
       <label>Label</label>
       <input type="text" id="hs-label" placeholder="Hotspot label">
+
+      <label>Placement</label>
+      <div class="type-buttons placement-buttons">
+        <button id="place-wall" data-placement="wall">🧱 Wall</button>
+        <button id="place-floor" data-placement="floor">⬇ Floor</button>
+      </div>
 
       <label>Icon</label>
       <div class="icon-picker" id="icon-picker"></div>
@@ -400,6 +409,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       lon: hsLon,
       lat: hsLat,
       type: 'nav',
+      placement: 'wall',
       label: 'Hotspot ' + (scn.hotspots.length + 1),
       icon: '👁',
       target: null,
@@ -439,6 +449,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       el.className = 'hotspot-overlay';
       if (hs.type === 'info') el.classList.add('info');
       if (hs.type === 'media') el.classList.add('media');
+      if (hs.placement === 'floor') el.classList.add('floor-placement');
       if (hs.id === state.selectedHotspotId) el.classList.add('selected');
       el.dataset.hotspotId = hs.id;
       el.textContent = hs.icon;
@@ -470,9 +481,15 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   function populateProps(hs) {
     // Type buttons
-    document.querySelectorAll('.type-buttons button').forEach(b => b.className = '');
+    document.querySelectorAll('.type-buttons button[data-type]').forEach(b => b.className = '');
     const activeBtn = document.querySelector(`.type-buttons button[data-type="${hs.type}"]`);
     if (activeBtn) activeBtn.className = 'active-' + hs.type;
+
+    // Placement buttons
+    document.querySelectorAll('.placement-buttons button').forEach(b => b.className = '');
+    const placement = hs.placement || 'wall';
+    const activePlacement = document.querySelector(`.placement-buttons button[data-placement="${placement}"]`);
+    if (activePlacement) activePlacement.className = 'active-placement';
 
     document.getElementById('hs-label').value = hs.label;
 
@@ -528,12 +545,23 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   function setupPropsEvents() {
     // Type buttons
-    document.querySelectorAll('.type-buttons button').forEach(btn => {
+    document.querySelectorAll('.type-buttons button[data-type]').forEach(btn => {
       btn.addEventListener('click', () => {
         const hs = getSelectedHotspot();
         if (!hs) return;
         hs.type = btn.dataset.type;
         populateProps(hs);
+      });
+    });
+
+    // Placement buttons
+    document.querySelectorAll('.placement-buttons button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const hs = getSelectedHotspot();
+        if (!hs) return;
+        hs.placement = btn.dataset.placement;
+        populateProps(hs);
+        renderHotspotOverlays();
       });
     });
 
@@ -881,6 +909,8 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 .viewer-hotspot.hs-info { background: rgba(90,174,255,0.5); border: 2px solid #5aaeff; box-shadow: 0 0 12px rgba(90,174,255,0.6); }
 .viewer-hotspot.hs-media { background: rgba(78,205,196,0.5); border: 2px solid #4ecdc4; box-shadow: 0 0 12px rgba(78,205,196,0.6); }
 .hs-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; }
+.viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.4); }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 8px currentColor; } 50% { box-shadow: 0 0 20px currentColor; } }
 
 /* Fade */
@@ -1012,8 +1042,17 @@ ${threeJsSrc}
         })
       );
       hsMesh.position.copy(hsPos);
-      hsMesh.lookAt(0, 0, 0);
+      const isFloor = (hs.placement === 'floor');
+      if (isFloor) {
+        // Floor hotspot: lie flat facing up
+        hsMesh.rotation.set(-Math.PI / 2, 0, 0);
+        // Rotate to face toward center on XZ plane
+        hsMesh.rotation.z = Math.atan2(hsPos.x, hsPos.z);
+      } else {
+        hsMesh.lookAt(0, 0, 0);
+      }
       hsMesh.userData._pulse = true;
+      hsMesh.userData._isFloor = isFloor;
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
@@ -1021,7 +1060,11 @@ ${threeJsSrc}
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
-      hitMesh.lookAt(0, 0, 0);
+      if (isFloor) {
+        hitMesh.rotation.copy(hsMesh.rotation);
+      } else {
+        hitMesh.lookAt(0, 0, 0);
+      }
       hitMesh.userData = hs;
       hitMesh.userData._hsColor = color;
       hitMesh.userData._hsIcon = iconChar;
@@ -1315,6 +1358,7 @@ ${threeJsSrc}
 
       const el = document.createElement('div');
       el.className = 'viewer-hotspot hs-' + hs.type;
+      if (hs.placement === 'floor') el.classList.add('hs-floor');
       el.style.left = sx + 'px';
       el.style.top = sy + 'px';
       el.style.pointerEvents = 'auto';
@@ -1681,11 +1725,16 @@ ${threeJsSrc}
     }
 
     if (hitTarget) {
-      // Position the pie fill on the hotspot, facing camera, slightly in front
+      // Position the pie fill on the hotspot, slightly in front
       gazeFillMesh.position.copy(hitTarget.position);
       const toCamera = camPos.clone().sub(hitTarget.position).normalize();
       gazeFillMesh.position.add(toCamera.multiplyScalar(0.3));
-      gazeFillMesh.lookAt(camPos);
+      if (hitTarget.userData.placement === 'floor') {
+        // Match floor hotspot orientation
+        gazeFillMesh.rotation.set(-Math.PI / 2, 0, Math.atan2(hitTarget.position.x, hitTarget.position.z));
+      } else {
+        gazeFillMesh.lookAt(camPos);
+      }
       gazeFillMesh.visible = true;
 
       if (gazeTarget === hitTarget) {
