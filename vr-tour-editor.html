@@ -1454,12 +1454,20 @@ ${threeJsSrc}
 
   // VR controller rays
   function makeControllerRay() {
+    const group = new THREE.Group();
     const lineGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 0, -500)
     ]);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xff7a00, linewidth: 2, transparent: true, opacity: 0.6 });
-    return new THREE.Line(lineGeo, lineMat);
+    group.add(new THREE.Line(lineGeo, lineMat));
+    // Dot at the end of the ray
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, depthTest: false });
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8), dotMat);
+    dot.position.set(0, 0, -500);
+    dot.name = 'rayDot';
+    group.add(dot);
+    return group;
   }
 
   const controller1 = renderer.xr.getController(0);
@@ -1802,6 +1810,30 @@ ${threeJsSrc}
     vrMinimapMesh.lookAt(camPos);
   }
 
+  // Update ray dot to show where laser points
+  function updateRayDots() {
+    [controller1, controller2].forEach(ctrl => {
+      const dot = ctrl.children[0] && ctrl.children[0].getObjectByName('rayDot');
+      if (!dot) return;
+      tempMatrix.identity().extractRotation(ctrl.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+      const allTargets = [...vrHotspotGroup.children];
+      if (vrMinimapMesh.visible) allTargets.push(vrMinimapMesh);
+      if (vrPanelGroup.visible) allTargets.push(...vrPanelGroup.children);
+      const hits = raycaster.intersectObjects(allTargets);
+      if (hits.length > 0) {
+        const hitWorld = hits[0].point;
+        const local = ctrl.worldToLocal(hitWorld.clone());
+        dot.position.copy(local);
+        dot.scale.set(1, 1, 1);
+      } else {
+        dot.position.set(0, 0, -500);
+        dot.scale.set(1, 1, 1);
+      }
+    });
+  }
+
   // Animate
   function animate() {
     renderer.setAnimationLoop(() => {
@@ -1818,6 +1850,7 @@ ${threeJsSrc}
         if (!vrMinimapActive) updateGaze();
         vrMinimapMesh.visible = true;
         updateVRMinimapPosition();
+        updateRayDots();
       }
       renderer.render(scene, camera);
       if (!renderer.xr.isPresenting) updateHotspots();
