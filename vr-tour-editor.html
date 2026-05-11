@@ -1017,7 +1017,7 @@ ${threeJsSrc}
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(35, 16),
+        new THREE.CircleGeometry(18, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
@@ -1537,6 +1537,17 @@ ${threeJsSrc}
   controller2.addEventListener('select', onVRSelect);
   scene.add(controller2);
 
+  // A button (squeeze) toggles minimap visibility
+  let vrMinimapHidden = false;
+  controller1.addEventListener('squeeze', () => {
+    vrMinimapHidden = !vrMinimapHidden;
+    if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
+  });
+  controller2.addEventListener('squeeze', () => {
+    vrMinimapHidden = !vrMinimapHidden;
+    if (vrMinimapHidden && vrMinimapActive) deactivateVRMinimap();
+  });
+
   function onVRSelect(event) {
     const controller = event.target;
     tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -1688,7 +1699,7 @@ ${threeJsSrc}
       gazeGroup.visible = true;
       // Distance from camera to scale rings consistently
       const dist = camPos.distanceTo(hitTarget.position);
-      const scale = Math.max(1, dist / 30);
+      const scale = Math.max(1, dist / 80);
       gazeGroup.scale.set(scale, scale, scale);
       if (gazeTarget === hitTarget) {
         gazeTimer += dt;
@@ -1701,9 +1712,9 @@ ${threeJsSrc}
       // Always rebuild rings so they're visible from frame 1
       gazeRing.geometry.dispose();
       const arc = Math.max(0.08, pct) * Math.PI * 2;
-      gazeRing.geometry = new THREE.RingGeometry(3.5, 4.5, 48, 1, -Math.PI / 2, arc);
+      gazeRing.geometry = new THREE.RingGeometry(1.4, 1.8, 48, 1, -Math.PI / 2, arc);
       gazeInnerRing.geometry.dispose();
-      gazeInnerRing.geometry = new THREE.RingGeometry(2, 3, 32);
+      gazeInnerRing.geometry = new THREE.RingGeometry(0.8, 1.2, 32);
       if (gazeTimer >= GAZE_DWELL) {
         handleHotspotClick(hitTarget.userData);
         gazeTarget = null;
@@ -1955,8 +1966,8 @@ ${threeJsSrc}
         vrMinimapMesh.visible = false;
       } else {
         if (!vrMinimapActive) updateGaze();
-        vrMinimapMesh.visible = true;
-        updateVRMinimapPosition();
+        vrMinimapMesh.visible = !vrMinimapHidden;
+        if (!vrMinimapHidden) updateVRMinimapPosition();
         updateRayDots();
       }
       renderer.render(scene, camera);
