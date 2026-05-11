@@ -820,7 +820,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         planX: s.planX,
         planY: s.planY,
         hotspots: s.hotspots.map(h => ({
-          id: h.id, lon: h.lon, lat: h.lat, type: h.type, label: h.label, icon: h.icon,
+          id: h.id, lon: h.lon, lat: h.lat, type: h.type, placement: h.placement || 'wall', label: h.label, icon: h.icon,
           target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null
         }))
       })),
