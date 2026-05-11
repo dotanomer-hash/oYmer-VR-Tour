@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>oYmer VR Tour Editor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+/* Toolbar */
+#toolbar { height: 48px; background: #16213e; display: flex; align-items: center; padding: 0 16px; gap: 12px; border-bottom: 1px solid #333; z-index: 100; }
+#toolbar .brand { font-size: 18px; font-weight: 700; color: #ff7a00; margin-right: 24px; }
+#toolbar button { background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+#toolbar button:hover { background: #ff7a00; color: #fff; }
+
+/* Main layout */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* Left panel - scenes */
+#scene-panel { width: 180px; background: #0f3460; border-right: 1px solid #333; display: flex; flex-direction: column; overflow: hidden; }
+#scene-panel .panel-header { padding: 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+#scene-panel .panel-header button { background: #ff7a00; border: none; color: #fff; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; }
+#scene-list { flex: 1; overflow-y: auto; padding: 6px; }
+.scene-item { padding: 6px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.scene-item:hover { background: #1a1a4a; }
+.scene-item.active { background: #ff7a00; color: #fff; }
+.scene-item img { width: 36px; height: 20px; object-fit: cover; border-radius: 2px; }
+.scene-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-item input { background: #1a1a4a; border: 1px solid #ff7a00; color: #fff; font-size: 12px; width: 100%; padding: 2px 4px; border-radius: 2px; }
+.scene-item.drag-over { border-top: 2px solid #ff7a00; }
+
+/* Context menu */
+#ctx-menu { position: fixed; background: #1a1a3a; border: 1px solid #444; border-radius: 6px; z-index: 9999; display: none; padding: 4px 0; min-width: 130px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+#ctx-menu .ctx-item { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #eee; }
+#ctx-menu .ctx-item:hover { background: #ff7a00; color: #fff; }
+
+/* Center viewport */
+#viewport-container { flex: 1; position: relative; background: #0a0a1a; display: flex; align-items: center; justify-content: center; }
+#viewport-container canvas { display: block; width: 100%; height: 100%; }
+#empty-state { text-align: center; color: #666; }
+#empty-state h2 { font-size: 20px; margin-bottom: 8px; color: #888; }
+#empty-state p { font-size: 14px; }
+
+/* Hotspot overlays in editor */
+.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ff7a00; background: rgba(255,122,0,0.3); transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; }
+.hotspot-overlay:hover { transform: translate(-50%, -50%) scale(1.3); }
+.hotspot-overlay.selected { border-color: #fff; box-shadow: 0 0 12px #ff7a00; }
+.hotspot-overlay.info { border-color: #5aaeff; background: rgba(90,174,255,0.3); }
+.hotspot-overlay.media { border-color: #4ecdc4; background: rgba(78,205,196,0.3); }
+
+/* Right panel - properties */
+#props-panel { width: 240px; background: #0f3460; border-left: 1px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
+#props-panel .panel-header { padding: 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid #333; }
+#props-empty { padding: 20px; text-align: center; color: #666; font-size: 13px; }
+#props-content { padding: 10px; display: none; }
+#props-content label { display: block; font-size: 11px; color: #aaa; margin-top: 10px; margin-bottom: 4px; }
+#props-content input[type="text"], #props-content textarea, #props-content select { width: 100%; background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+#props-content textarea { resize: vertical; min-height: 60px; }
+
+/* Type buttons */
+.type-buttons { display: flex; gap: 4px; margin-top: 6px; }
+.type-buttons button { flex: 1; padding: 6px 4px; border: 1px solid #333; background: #1a1a4a; color: #eee; border-radius: 4px; cursor: pointer; font-size: 11px; }
+.type-buttons button.active-nav { background: #ff7a00; border-color: #ff7a00; color: #fff; }
+.type-buttons button.active-info { background: #5aaeff; border-color: #5aaeff; color: #fff; }
+.type-buttons button.active-media { background: #4ecdc4; border-color: #4ecdc4; color: #fff; }
+
+/* Icon picker */
+.icon-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.icon-picker span { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; font-size: 16px; border: 1px solid transparent; }
+.icon-picker span:hover { border-color: #ff7a00; }
+.icon-picker span.selected { border-color: #ff7a00; background: #1a1a4a; }
+
+/* Conditional fields */
+.cond-field { display: none; }
+.cond-field.visible { display: block; }
+
+/* Delete button */
+#delete-hotspot { margin-top: 16px; width: 100%; padding: 8px; background: #c0392b; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+#delete-hotspot:hover { background: #e74c3c; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0a0a1a; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* Floor Plan Modal */
+#floorplan-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; z-index: 5000; align-items: center; justify-content: center; }
+#floorplan-modal.open { display: flex; }
+#floorplan-editor { background: #16213e; border: 1px solid #444; border-radius: 10px; width: 80vw; max-width: 900px; height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+#floorplan-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #333; }
+#floorplan-header h3 { color: #ff7a00; margin: 0; font-size: 16px; }
+#floorplan-header button { background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+#floorplan-header button:hover { background: #ff7a00; }
+#floorplan-body { flex: 1; position: relative; overflow: hidden; }
+#floorplan-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#floorplan-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); color: #aaa; font-size: 12px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <div class="brand">oYmer VR</div>
+  <button id="btn-load">Load Project</button>
+  <button id="btn-save">Save Project</button>
+  <button id="btn-export">Export Tour</button>
+  <button id="btn-floorplan" style="margin-left:auto">🗺 Floor Plan</button>
+</div>
+
+<!-- Main layout -->
+<div id="main">
+  <!-- Left panel -->
+  <div id="scene-panel">
+    <div class="panel-header">Scenes <button id="btn-add-scene">+</button></div>
+    <div id="scene-list"></div>
+  </div>
+
+  <!-- Center viewport -->
+  <div id="viewport-container">
+    <div id="empty-state">
+      <h2>No Scene Loaded</h2>
+      <p>Click + to add a panorama image</p>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div id="props-panel">
+    <div class="panel-header">Hotspot Properties</div>
+    <div id="props-empty">Click a hotspot to edit, or click in the viewport to place one.</div>
+    <div id="props-content">
+      <label>Type</label>
+      <div class="type-buttons">
+        <button id="type-nav" data-type="nav">Nav</button>
+        <button id="type-info" data-type="info">Info</button>
+        <button id="type-media" data-type="media">Media</button>
+      </div>
+
+      <label>Label</label>
+      <input type="text" id="hs-label" placeholder="Hotspot label">
+
+      <label>Icon</label>
+      <div class="icon-picker" id="icon-picker"></div>
+
+      <div class="cond-field" id="field-target">
+        <label>Target Scene</label>
+        <select id="hs-target"></select>
+      </div>
+
+      <div class="cond-field" id="field-info-title">
+        <label>Title</label>
+        <input type="text" id="hs-info-title" placeholder="Info title">
+      </div>
+      <div class="cond-field" id="field-info-body">
+        <label>Body</label>
+        <textarea id="hs-info-body" placeholder="Info body text"></textarea>
+      </div>
+
+      <div class="cond-field" id="field-image">
+        <label>Image</label>
+        <input type="file" id="hs-image-upload" accept="image/*">
+        <img id="hs-image-preview" style="max-width:100%;margin-top:6px;border-radius:4px;display:none">
+        <button id="hs-image-clear" style="display:none;margin-top:4px;background:#c00;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Remove Image</button>
+      </div>
+      <div class="cond-field" id="field-video">
+        <label>Video URL</label>
+        <input type="text" id="hs-video-url" placeholder="https://...">
+      </div>
+      <div class="cond-field" id="field-link">
+        <label>Link URL</label>
+        <input type="text" id="hs-link-url" placeholder="https://...">
+      </div>
+
+      <button id="delete-hotspot">Delete Hotspot</button>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="ctx-menu">
+  <div class="ctx-item" id="ctx-rename">Rename</div>
+  <div class="ctx-item" id="ctx-delete">Delete</div>
+</div>
+
+<!-- Floor Plan Modal -->
+<div id="floorplan-modal">
+  <div id="floorplan-editor">
+    <div id="floorplan-header">
+      <h3>Floor Plan</h3>
+      <div style="display:flex;gap:8px">
+        <button id="fp-upload">Upload Image</button>
+        <button id="fp-remove" style="background:#c0392b">Remove</button>
+        <button id="fp-close">Close</button>
+      </div>
+    </div>
+    <div id="floorplan-body">
+      <canvas id="floorplan-canvas"></canvas>
+      <div id="floorplan-hint">Drag scene markers to position them on the floor plan</div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="file-scene" accept="image/*" multiple style="display:none">
+<input type="file" id="file-load" accept=".json" style="display:none">
+<input type="file" id="file-floorplan" accept="image/*" style="display:none">
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // Cache Three.js source for offline export
+  let __THREE_SRC__ = '';
+  (function cacheThreeJs() {
+    const scriptEl = document.querySelector('script[src*="three"]');
+    if (scriptEl && scriptEl.src) {
+      fetch(scriptEl.src).then(r => r.text()).then(src => { __THREE_SRC__ = src; })
+        .catch(() => { console.warn('Could not cache Three.js source for export. Export will fetch on demand.'); });
+    }
+  })();
+
+  // oYmer logo SVG
+  const OYMER_LOGO_SVG = `<svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#ff7a00"/><text x="18" y="23" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold" font-family="sans-serif">oY</text></svg>`;
+
+  // === State ===
+  const state = {
+    scenes: [],        // [{id, name, imageData, planX, planY, hotspots: [{id, lon, lat, type, label, icon, target, infoTitle, infoBody, videoUrl, linkUrl}]}]
+    floorPlan: null,   // base64 image data for floor plan
+    currentSceneId: null,
+    selectedHotspotId: null,
+    nextSceneId: 1,
+    nextHotspotId: 1
+  };
+
+  const ICONS = ['👁','🚪','⬆️','⬇️','🍽','☕','🎭','ℹ️','📷','🎬'];
+
+  // === DOM refs ===
+  const sceneListEl = document.getElementById('scene-list');
+  const viewportContainer = document.getElementById('viewport-container');
+  const emptyState = document.getElementById('empty-state');
+  const propsEmpty = document.getElementById('props-empty');
+  const propsContent = document.getElementById('props-content');
+  const fileScene = document.getElementById('file-scene');
+  const fileLoad = document.getElementById('file-load');
+
+  // === Three.js setup ===
+  let renderer, camera, scene3d, sphere, sphereMaterial;
+  let isThreeReady = false;
+  let lon = 0, lat = 0;
+  let pointerDown = false, pointerMoved = false;
+  let pointerStartX = 0, pointerStartY = 0;
+  let lastPointerX = 0, lastPointerY = 0;
+  let hotspotSprites = []; // {sprite, hotspotId}
+  let raycaster, pointerVec;
+
+  function initThree() {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(viewportContainer.clientWidth, viewportContainer.clientHeight);
+    renderer.domElement.style.display = 'none';
+    viewportContainer.appendChild(renderer.domElement);
+
+    scene3d = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(65, viewportContainer.clientWidth / viewportContainer.clientHeight, 1, 1100);
+    camera.target = new THREE.Vector3(0, 0, 0);
+
+    // Inverted sphere for panorama
+    const geo = new THREE.SphereGeometry(500, 64, 32);
+    geo.scale(-1, 1, 1);
+    sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    sphere = new THREE.Mesh(geo, sphereMaterial);
+    scene3d.add(sphere);
+
+    raycaster = new THREE.Raycaster();
+    pointerVec = new THREE.Vector2();
+
+    isThreeReady = true;
+    animate();
+
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize() {
+    if (!isThreeReady) return;
+    const w = viewportContainer.clientWidth;
+    const h = viewportContainer.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (!isThreeReady || !state.currentSceneId) return;
+
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    camera.target.setFromSphericalCoords(1, phi, theta);
+    camera.lookAt(camera.target);
+    renderer.render(scene3d, camera);
+
+    renderHotspotOverlays();
+  }
+
+  // === Panorama Loading ===
+  function loadPanorama(imageData, isStereo) {
+    const tex = new THREE.TextureLoader().load(imageData, () => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+    });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    // For stereo over-under: show only top half in flat mode (editor)
+    if (isStereo) {
+      tex.repeat.set(1, 0.5);
+      tex.offset.set(0, 0.5);
+    } else {
+      tex.repeat.set(1, 1);
+      tex.offset.set(0, 0);
+    }
+    sphereMaterial.map = tex;
+    sphereMaterial.color.set(0xffffff);
+    sphereMaterial.needsUpdate = true;
+    renderer.domElement.style.display = 'block';
+    emptyState.style.display = 'none';
+  }
+
+  // === Pointer Handling (viewport) ===
+  function setupPointerEvents() {
+    const el = viewportContainer;
+
+    el.addEventListener('mousedown', (e) => {
+      if (e.target !== renderer.domElement && !e.target.classList.contains('hotspot-overlay')) return;
+      e.preventDefault();
+      pointerDown = true;
+      pointerMoved = false;
+      pointerStartX = e.clientX;
+      pointerStartY = e.clientY;
+      lastPointerX = e.clientX;
+      lastPointerY = e.clientY;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!pointerDown) return;
+      const dx = e.clientX - pointerStartX;
+      const dy = e.clientY - pointerStartY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) pointerMoved = true;
+
+      const movX = e.clientX - lastPointerX;
+      const movY = e.clientY - lastPointerY;
+      lon -= movX * 0.3;
+      lat += movY * 0.3;
+      lat = Math.max(-85, Math.min(85, lat));
+      lastPointerX = e.clientX;
+      lastPointerY = e.clientY;
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!pointerDown) return;
+      pointerDown = false;
+      if (pointerMoved) return;
+
+      // Check if clicked on a hotspot overlay
+      if (e.target.classList.contains('hotspot-overlay')) {
+        const hsId = parseInt(e.target.dataset.hotspotId);
+        selectHotspot(hsId);
+        return;
+      }
+
+      // Raycast to sphere to place hotspot
+      if (e.target === renderer.domElement && state.currentSceneId) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(pointerVec, camera);
+        const intersects = raycaster.intersectObject(sphere);
+        if (intersects.length > 0) {
+          const point = intersects[0].point;
+          // Convert to spherical (matching setFromSphericalCoords convention)
+          const r = point.length();
+          const phi = Math.acos(point.y / r);
+          const theta = Math.atan2(point.x, point.z);
+          const hsLat = 90 - THREE.MathUtils.radToDeg(phi);
+          const hsLon = THREE.MathUtils.radToDeg(theta);
+          placeHotspot(hsLon, hsLat);
+        }
+      }
+    });
+  }
+
+  // === Hotspot Placement ===
+  function placeHotspot(hsLon, hsLat) {
+    const scn = getCurrentScene();
+    if (!scn) return;
+    const hs = {
+      id: state.nextHotspotId++,
+      lon: hsLon,
+      lat: hsLat,
+      type: 'nav',
+      label: 'Hotspot ' + (scn.hotspots.length + 1),
+      icon: '👁',
+      target: null,
+      infoTitle: '',
+      infoBody: '',
+      videoUrl: '',
+      linkUrl: '',
+      imageData: null
+    };
+    scn.hotspots.push(hs);
+    selectHotspot(hs.id);
+  }
+
+  // === Hotspot Overlays (HTML projected from 3D) ===
+  function renderHotspotOverlays() {
+    // Remove existing overlays
+    viewportContainer.querySelectorAll('.hotspot-overlay').forEach(el => el.remove());
+
+    const scn = getCurrentScene();
+    if (!scn || !isThreeReady) return;
+
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+
+    scn.hotspots.forEach(hs => {
+      const phi = THREE.MathUtils.degToRad(90 - hs.lat);
+      const theta = THREE.MathUtils.degToRad(hs.lon);
+      const pos = new THREE.Vector3().setFromSphericalCoords(450, phi, theta);
+
+      const projected = pos.clone().project(camera);
+      if (projected.z > 1) return; // behind camera
+
+      const x = (projected.x * 0.5 + 0.5) * w;
+      const y = (-projected.y * 0.5 + 0.5) * h;
+
+      const el = document.createElement('div');
+      el.className = 'hotspot-overlay';
+      if (hs.type === 'info') el.classList.add('info');
+      if (hs.type === 'media') el.classList.add('media');
+      if (hs.id === state.selectedHotspotId) el.classList.add('selected');
+      el.dataset.hotspotId = hs.id;
+      el.textContent = hs.icon;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      viewportContainer.appendChild(el);
+    });
+  }
+
+  // === Hotspot Selection & Properties ===
+  function selectHotspot(id) {
+    state.selectedHotspotId = id;
+    const hs = getSelectedHotspot();
+    if (!hs) {
+      propsEmpty.style.display = 'block';
+      propsContent.style.display = 'none';
+      return;
+    }
+    propsEmpty.style.display = 'none';
+    propsContent.style.display = 'block';
+    populateProps(hs);
+  }
+
+  function deselectHotspot() {
+    state.selectedHotspotId = null;
+    propsEmpty.style.display = 'block';
+    propsContent.style.display = 'none';
+  }
+
+  function populateProps(hs) {
+    // Type buttons
+    document.querySelectorAll('.type-buttons button').forEach(b => b.className = '');
+    const activeBtn = document.querySelector(`.type-buttons button[data-type="${hs.type}"]`);
+    if (activeBtn) activeBtn.className = 'active-' + hs.type;
+
+    document.getElementById('hs-label').value = hs.label;
+
+    // Icon picker
+    const picker = document.getElementById('icon-picker');
+    picker.innerHTML = '';
+    ICONS.forEach(icon => {
+      const sp = document.createElement('span');
+      sp.textContent = icon;
+      if (icon === hs.icon) sp.className = 'selected';
+      sp.onclick = () => { hs.icon = icon; populateProps(hs); };
+      picker.appendChild(sp);
+    });
+
+    // Conditional fields
+    document.getElementById('field-target').className = 'cond-field' + (hs.type === 'nav' ? ' visible' : '');
+    document.getElementById('field-info-title').className = 'cond-field' + (hs.type === 'info' ? ' visible' : '');
+    document.getElementById('field-info-body').className = 'cond-field' + (hs.type === 'info' ? ' visible' : '');
+    document.getElementById('field-image').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
+    document.getElementById('field-video').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
+    document.getElementById('field-link').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
+
+    // Image preview
+    const imgPreview = document.getElementById('hs-image-preview');
+    const imgClear = document.getElementById('hs-image-clear');
+    if (hs.imageData) {
+      imgPreview.src = hs.imageData;
+      imgPreview.style.display = 'block';
+      imgClear.style.display = 'inline-block';
+    } else {
+      imgPreview.style.display = 'none';
+      imgClear.style.display = 'none';
+    }
+    document.getElementById('hs-image-upload').value = '';
+
+    // Target scene dropdown
+    const sel = document.getElementById('hs-target');
+    sel.innerHTML = '<option value="">-- Select --</option>';
+    state.scenes.forEach(s => {
+      if (s.id === state.currentSceneId) return;
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if (hs.target == s.id) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    document.getElementById('hs-info-title').value = hs.infoTitle || '';
+    document.getElementById('hs-info-body').value = hs.infoBody || '';
+    document.getElementById('hs-video-url').value = hs.videoUrl || '';
+    document.getElementById('hs-link-url').value = hs.linkUrl || '';
+  }
+
+  function setupPropsEvents() {
+    // Type buttons
+    document.querySelectorAll('.type-buttons button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const hs = getSelectedHotspot();
+        if (!hs) return;
+        hs.type = btn.dataset.type;
+        populateProps(hs);
+      });
+    });
+
+    document.getElementById('hs-label').addEventListener('input', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.label = e.target.value;
+    });
+
+    document.getElementById('hs-target').addEventListener('change', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.target = e.target.value || null;
+    });
+
+    document.getElementById('hs-info-title').addEventListener('input', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.infoTitle = e.target.value;
+    });
+
+    document.getElementById('hs-info-body').addEventListener('input', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.infoBody = e.target.value;
+    });
+
+    document.getElementById('hs-video-url').addEventListener('input', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.videoUrl = e.target.value;
+    });
+
+    document.getElementById('hs-link-url').addEventListener('input', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.linkUrl = e.target.value;
+    });
+
+    document.getElementById('hs-image-upload').addEventListener('change', (e) => {
+      const hs = getSelectedHotspot();
+      if (!hs || !e.target.files[0]) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          hs.imageData = canvas.toDataURL('image/jpeg', 0.9);
+          populateProps(hs);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+
+    document.getElementById('hs-image-clear').addEventListener('click', () => {
+      const hs = getSelectedHotspot();
+      if (hs) { hs.imageData = null; populateProps(hs); }
+    });
+
+    document.getElementById('delete-hotspot').addEventListener('click', () => {
+      const scn = getCurrentScene();
+      const hs = getSelectedHotspot();
+      if (!scn || !hs) return;
+      scn.hotspots = scn.hotspots.filter(h => h.id !== hs.id);
+      deselectHotspot();
+    });
+  }
+
+  // === Scene Management ===
+  function addScene(imageData, name, isStereo) {
+    const scn = {
+      id: state.nextSceneId++,
+      name: name || 'Scene ' + state.scenes.length + 1,
+      imageData: imageData,
+      isStereo: isStereo || false,
+      planX: null,
+      planY: null,
+      hotspots: []
+    };
+    state.scenes.push(scn);
+    selectScene(scn.id);
+    renderSceneList();
+  }
+
+  function selectScene(id) {
+    state.currentSceneId = id;
+    deselectHotspot();
+    const scn = getCurrentScene();
+    if (scn) loadPanorama(scn.imageData, scn.isStereo);
+    renderSceneList();
+  }
+
+  let draggedSceneId = null;
+
+  function renderSceneList() {
+    sceneListEl.innerHTML = '';
+    state.scenes.forEach((scn, idx) => {
+      const div = document.createElement('div');
+      div.className = 'scene-item' + (scn.id === state.currentSceneId ? ' active' : '');
+      div.draggable = true;
+      div.dataset.sceneId = scn.id;
+      div.dataset.sceneIdx = idx;
+
+      const img = document.createElement('img');
+      img.src = scn.imageData;
+      div.appendChild(img);
+
+      const span = document.createElement('span');
+      span.textContent = scn.name;
+      div.appendChild(span);
+
+      div.addEventListener('click', () => selectScene(scn.id));
+      div.addEventListener('dblclick', () => inlineRenameScene(div, span, scn));
+
+      // Drag-and-drop reordering
+      div.addEventListener('dragstart', (e) => {
+        draggedSceneId = scn.id;
+        e.dataTransfer.effectAllowed = 'move';
+        div.style.opacity = '0.5';
+      });
+      div.addEventListener('dragend', () => { div.style.opacity = ''; });
+      div.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        div.classList.add('drag-over');
+      });
+      div.addEventListener('dragleave', () => { div.classList.remove('drag-over'); });
+      div.addEventListener('drop', (e) => {
+        e.preventDefault();
+        div.classList.remove('drag-over');
+        if (draggedSceneId == null || draggedSceneId === scn.id) return;
+        const fromIdx = state.scenes.findIndex(s => s.id === draggedSceneId);
+        const toIdx = state.scenes.findIndex(s => s.id === scn.id);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [moved] = state.scenes.splice(fromIdx, 1);
+        state.scenes.splice(toIdx, 0, moved);
+        draggedSceneId = null;
+        renderSceneList();
+      });
+
+      // Context menu
+      div.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, scn);
+      });
+
+      sceneListEl.appendChild(div);
+    });
+  }
+
+  function inlineRenameScene(div, span, scn) {
+    span.style.display = 'none';
+    const inp = document.createElement('input');
+    inp.value = scn.name;
+    div.appendChild(inp);
+    inp.focus();
+    inp.select();
+    const finish = () => {
+      scn.name = inp.value || scn.name;
+      inp.remove();
+      span.textContent = scn.name;
+      span.style.display = '';
+    };
+    inp.addEventListener('blur', finish);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+  }
+
+  // === Image Processing ===
+  function processImage(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const ratio = img.width / img.height;
+          // Stereo over-under: aspect ratio ~1:1 means stereo, ~2:1 means mono
+          const isStereo = ratio < 1.5;
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+          resolve({ dataUrl, isStereo });
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // === Save / Load ===
+  async function saveProject() {
+    const data = {
+      version: 1,
+      scenes: state.scenes,
+      floorPlan: state.floorPlan,
+      nextSceneId: state.nextSceneId,
+      nextHotspotId: state.nextHotspotId
+    };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: 'vr-tour-project.json',
+          types: [{ description: 'JSON Project', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    // Fallback for browsers without File System Access API
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vr-tour-project.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function loadProject(json) {
+    try {
+      const data = JSON.parse(json);
+      state.scenes = data.scenes || [];
+      state.floorPlan = data.floorPlan || null;
+      state.nextSceneId = data.nextSceneId || 1;
+      state.nextHotspotId = data.nextHotspotId || 1;
+      state.currentSceneId = null;
+      state.selectedHotspotId = null;
+      deselectHotspot();
+      if (state.scenes.length > 0) {
+        selectScene(state.scenes[0].id);
+      } else {
+        renderer.domElement.style.display = 'none';
+        emptyState.style.display = 'block';
+      }
+      renderSceneList();
+    } catch (e) {
+      alert('Failed to load project: ' + e.message);
+    }
+  }
+
+  // === Export ===
+  async function exportTour() {
+    if (state.scenes.length === 0) { alert('Add at least one scene first.'); return; }
+
+    const tourData = {
+      scenes: state.scenes.map(s => ({
+        id: s.id,
+        name: s.name,
+        imageData: s.imageData,
+        isStereo: s.isStereo || false,
+        planX: s.planX,
+        planY: s.planY,
+        hotspots: s.hotspots.map(h => ({
+          id: h.id, lon: h.lon, lat: h.lat, type: h.type, label: h.label, icon: h.icon,
+          target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null
+        }))
+      })),
+      floorPlan: state.floorPlan || null,
+      startSceneId: state.scenes[0].id
+    };
+
+    // Use cached Three.js source or fetch on demand
+    let threeJsSrc = __THREE_SRC__;
+    if (!threeJsSrc) {
+      try {
+        const resp = await fetch('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js');
+        threeJsSrc = await resp.text();
+        __THREE_SRC__ = threeJsSrc;
+      } catch (e) {
+        alert('Failed to fetch Three.js. Check internet connection.');
+        return;
+      }
+    }
+
+    const html = getViewerTemplate(tourData, threeJsSrc);
+    const blob = new Blob([html], { type: 'text/html' });
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: 'vr-tour.html',
+          types: [{ description: 'HTML Tour', accept: { 'text/html': ['.html'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vr-tour.html';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // === Viewer Template ===
+  function getViewerTemplate(tourData, threeJsSrc) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR Tour</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+#viewer-canvas { width: 100vw; height: 100vh; display: block; }
+
+/* Logo */
+#logo { position: fixed; top: 12px; right: 16px; font-size: 22px; font-weight: 900; color: #ff7a00; z-index: 1000; pointer-events: none; text-shadow: 0 0 8px rgba(255,122,0,0.5); }
+
+/* Sidebar */
+#sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: rgba(10,10,26,0.9); border-right: 1px solid #333; z-index: 900; transform: translateX(-200px); transition: transform 0.3s; }
+#sidebar.open { transform: translateX(0); }
+#sidebar-toggle { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 56px; background: rgba(10,10,26,0.8); border: 1px solid #333; border-radius: 0 6px 6px 0; color: #eee; cursor: pointer; z-index: 901; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+#sidebar.open ~ #sidebar-toggle { left: 200px; }
+.nav-item { padding: 12px 16px; color: #eee; cursor: pointer; font-size: 13px; border-bottom: 1px solid #222; }
+.nav-item:hover { background: #1a1a4a; }
+.nav-item.active { border-left: 3px solid #ff7a00; background: #1a1a4a; }
+
+/* Hotspots */
+.viewer-hotspot { position: absolute; width: 36px; height: 36px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; pointer-events: auto; animation: pulse 2s infinite; transition: transform 0.2s; }
+.viewer-hotspot:hover { transform: translate(-50%, -50%) scale(1.4); }
+.viewer-hotspot.hs-nav { background: rgba(255,122,0,0.5); border: 2px solid #ff7a00; box-shadow: 0 0 12px rgba(255,122,0,0.6); }
+.viewer-hotspot.hs-info { background: rgba(90,174,255,0.5); border: 2px solid #5aaeff; box-shadow: 0 0 12px rgba(90,174,255,0.6); }
+.viewer-hotspot.hs-media { background: rgba(78,205,196,0.5); border: 2px solid #4ecdc4; box-shadow: 0 0 12px rgba(78,205,196,0.6); }
+.hs-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 8px currentColor; } 50% { box-shadow: 0 0 20px currentColor; } }
+
+/* Fade */
+#fade-overlay { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s; z-index: 800; }
+#fade-overlay.active { opacity: 1; }
+
+/* Info modal */
+#info-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1100; }
+#info-modal.open { display: flex; }
+#info-box { background: #16213e; border: 1px solid #333; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; color: #eee; }
+#info-box h3 { margin-bottom: 12px; color: #ff7a00; }
+#info-box p { font-size: 14px; line-height: 1.6; }
+#info-close { margin-top: 16px; background: #ff7a00; border: none; color: #fff; padding: 8px 20px; border-radius: 4px; cursor: pointer; }
+
+/* VR button */
+#vr-button { position: fixed; bottom: 20px; right: 20px; background: #ff7a00; border: none; color: #fff; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; z-index: 1000; display: none; }
+
+/* Minimap HUD */
+#minimap { position: fixed; bottom: 16px; left: 16px; z-index: 900; pointer-events: auto; border-radius: 10px; overflow: hidden; opacity: 0.75; transition: opacity 0.3s; cursor: pointer; }
+#minimap:hover { opacity: 0.95; }
+</style>
+</head>
+<body>
+<div id="logo">${OYMER_LOGO_SVG}</div>
+<div id="fade-overlay"></div>
+
+<div id="sidebar">
+  <div style="padding:12px 16px; font-weight:700; color:#ff7a00; border-bottom:1px solid #333;">Scenes</div>
+  <div id="nav-list"></div>
+</div>
+<button id="sidebar-toggle">&#9654;</button>
+
+<div id="hotspot-layer" style="position:fixed;inset:0;pointer-events:none;z-index:500;"></div>
+
+<div id="info-modal">
+  <div id="info-box">
+    <h3 id="info-modal-title"></h3>
+    <p id="info-modal-body"></p>
+    <button id="info-close">Close</button>
+  </div>
+</div>
+
+<button id="vr-button">Enter VR</button>
+<canvas id="minimap" width="220" height="220"></canvas>
+
+<script>
+${threeJsSrc}
+<\/script>
+<script>
+(function(){
+  const TOUR = ${JSON.stringify(tourData)};
+  let currentSceneId = TOUR.startSceneId;
+  let lon = 0, lat = 0;
+  let pointerDown = false, pointerMoved = false;
+  let startX = 0, startY = 0, lastX = 0, lastY = 0;
+
+  // Three.js setup
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local');
+  document.body.appendChild(renderer.domElement);
+  renderer.domElement.id = 'viewer-canvas';
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 1, 1100);
+
+  const geo = new THREE.SphereGeometry(500, 64, 32);
+  geo.scale(-1, 1, 1);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const sphere = new THREE.Mesh(geo, mat);
+  scene.add(sphere);
+
+  // 3D hotspot sprites for VR
+  const vrHotspotGroup = new THREE.Group();
+  scene.add(vrHotspotGroup);
+  const hsColorMap = { nav: 0xff7a00, info: 0x2196f3, media: 0x4caf50 };
+  const raycaster = new THREE.Raycaster();
+  raycaster.far = 500;
+  const tempMatrix = new THREE.Matrix4();
+
+  function makeTextTexture(text, bgColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(128, 128, 120, 0, Math.PI * 2);
+    ctx.fillStyle = bgColor;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    ctx.font = '80px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, 128, 128);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  function updateVRHotspots() {
+    while (vrHotspotGroup.children.length) {
+      const c = vrHotspotGroup.children[0];
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) { if (c.material.map) c.material.map.dispose(); c.material.dispose(); }
+      vrHotspotGroup.remove(c);
+    }
+    const s = TOUR.scenes.find(sc => sc.id === currentSceneId);
+    if (!s) return;
+    s.hotspots.forEach(hs => {
+      const phi = (90 - hs.lat) * Math.PI / 180;
+      const theta = hs.lon * Math.PI / 180;
+      const hsPos = new THREE.Vector3().setFromSphericalCoords(100, phi, theta);
+
+      const color = hsColorMap[hs.type] || 0xff7a00;
+      const hex = '#' + color.toString(16).padStart(6, '0');
+      const iconChar = hs.icon || (hs.type === 'nav' ? '>' : hs.type === 'info' ? 'i' : '*');
+      const hsMesh = new THREE.Mesh(
+        new THREE.CircleGeometry(5, 32),
+        new THREE.MeshBasicMaterial({
+          map: makeTextTexture(iconChar, hex),
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: false
+        })
+      );
+      hsMesh.position.copy(hsPos);
+      hsMesh.lookAt(0, 0, 0);
+
+      // Larger invisible hit area for easier gaze/laser targeting
+      const hitMesh = new THREE.Mesh(
+        new THREE.CircleGeometry(15, 16),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
+      );
+      hitMesh.position.copy(hsPos);
+      hitMesh.lookAt(0, 0, 0);
+      hitMesh.userData = hs;
+      vrHotspotGroup.add(hitMesh);
+      vrHotspotGroup.add(hsMesh);
+    });
+  }
+
+  let currentStereo = false;
+  sphere.onBeforeRender = function(rend, sc, cam) {
+    if (!currentStereo || !mat.map) return;
+    if (rend.xr.isPresenting) {
+      const xrCams = rend.xr.getCamera().cameras;
+      if (xrCams && xrCams.length === 2) {
+        if (cam === xrCams[0]) {
+          mat.map.offset.set(0, 0.5);
+        } else if (cam === xrCams[1]) {
+          mat.map.offset.set(0, 0);
+        }
+      }
+    } else {
+      mat.map.offset.set(0, 0.5);
+    }
+  };
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Sidebar
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  sidebarToggle.onclick = () => { sidebar.classList.toggle('open'); sidebarToggle.innerHTML = sidebar.classList.contains('open') ? '&#9664;' : '&#9654;'; };
+
+  function buildNav() {
+    const list = document.getElementById('nav-list');
+    list.innerHTML = '';
+    TOUR.scenes.forEach(s => {
+      const d = document.createElement('div');
+      d.className = 'nav-item' + (s.id === currentSceneId ? ' active' : '');
+      d.textContent = s.name;
+      d.onclick = () => goToScene(s.id);
+      list.appendChild(d);
+    });
+  }
+
+  // Minimap HUD
+  let minimapFloorImg = null;
+  if (TOUR.floorPlan) {
+    minimapFloorImg = new Image();
+    minimapFloorImg.src = TOUR.floorPlan;
+  }
+
+  function getScenePositions(W, H, pad) {
+    const scenes = TOUR.scenes;
+    const count = scenes.length;
+    const positions = {};
+    const hasFloor = scenes.some(s => s.planX !== null && s.planX !== undefined);
+
+    if (hasFloor) {
+      scenes.forEach(s => {
+        if (s.planX !== null && s.planX !== undefined) {
+          positions[s.id] = { x: pad + s.planX * (W - pad * 2), y: pad + s.planY * (H - pad * 2) };
+        } else {
+          positions[s.id] = { x: W / 2, y: H / 2 };
+        }
+      });
+    } else {
+      if (count === 1) {
+        positions[scenes[0].id] = { x: W / 2, y: H / 2 };
+      } else {
+        const usable = W - pad * 2;
+        const cols = Math.ceil(Math.sqrt(count));
+        const cellW = usable / Math.max(cols - 1, 1);
+        const cellH = (H - pad * 2) / Math.max(Math.ceil(count / cols) - 1, 1);
+        scenes.forEach((s, i) => {
+          positions[s.id] = { x: pad + (i % cols) * cellW, y: pad + Math.floor(i / cols) * cellH };
+        });
+      }
+    }
+    return positions;
+  }
+
+  function drawMinimap() {
+    const cvs = document.getElementById('minimap');
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    const W = cvs.width, H = cvs.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Background: floor plan image or dark box
+    if (minimapFloorImg && minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(0, 0, W, H, 10);
+      ctx.clip();
+      ctx.drawImage(minimapFloorImg, 0, 0, W, H);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = 'rgba(10, 15, 30, 0.65)';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, W, H, 10);
+      ctx.fill();
+    }
+
+    const scenes = TOUR.scenes;
+    if (!scenes.length) return;
+    const pad = 25;
+    const positions = getScenePositions(W, H, pad);
+
+    // Connection lines
+    ctx.lineWidth = 1.5;
+    scenes.forEach(s => {
+      s.hotspots.forEach(hs => {
+        if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
+          const from = positions[s.id];
+          const to = positions[parseInt(hs.target)];
+          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.6)' : 'rgba(255,255,255,0.25)';
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.stroke();
+        }
+      });
+    });
+
+    // Scene nodes
+    scenes.forEach(s => {
+      const p = positions[s.id];
+      const isCurrent = s.id === currentSceneId;
+      const r = isCurrent ? 12 : 9;
+
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12; }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.7)';
+      ctx.fill();
+      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = isCurrent ? 2 : 1;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Hotspot dots
+      s.hotspots.forEach((hs, hi) => {
+        const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(p.x + (r + 6) * Math.cos(a), p.y + (r + 6) * Math.sin(a), 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        ctx.fill();
+      });
+
+      // Label
+      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.7)';
+      ctx.font = (isCurrent ? 'bold ' : '') + '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.name.length > 12 ? s.name.substring(0, 11) + '..' : s.name, p.x, p.y + r + 14);
+    });
+
+    ctx.fillStyle = 'rgba(255,122,0,0.8)';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('PLAN VIEW', 8, 14);
+  }
+
+  // Minimap click navigation
+  document.getElementById('minimap').addEventListener('click', (e) => {
+    const cvs = e.target;
+    const rect = cvs.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
+    const my = (e.clientY - rect.top) * (cvs.height / rect.height);
+    const positions = getScenePositions(cvs.width, cvs.height, 25);
+    for (const s of TOUR.scenes) {
+      const p = positions[s.id];
+      if (Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
+        goToScene(s.id);
+        return;
+      }
+    }
+  });
+
+  function loadScene(id) {
+    const s = TOUR.scenes.find(sc => sc.id === id);
+    if (!s) return;
+    currentSceneId = id;
+    currentStereo = s.isStereo || false;
+
+    const tex = new THREE.TextureLoader().load(s.imageData);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    if (s.isStereo) {
+      tex.repeat.set(1, 0.5);
+      tex.offset.set(0, 0.5);
+    }
+    mat.map = tex;
+    mat.needsUpdate = true;
+
+    buildNav();
+    updateHotspots();
+    updateVRHotspots();
+    drawMinimap();
+    drawVRMinimap();
+  }
+
+  function goToScene(id) {
+    if (id === currentSceneId) return;
+    const fade = document.getElementById('fade-overlay');
+    fade.classList.add('active');
+    setTimeout(() => { loadScene(id); lon = 0; lat = 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
+  }
+
+  // Pointer
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest('#sidebar') || e.target.closest('#sidebar-toggle') || e.target.closest('#info-modal') || e.target.closest('#vr-button')) return;
+    pointerDown = true; pointerMoved = false;
+    startX = lastX = e.clientX; startY = lastY = e.clientY;
+  });
+  document.addEventListener('pointermove', e => {
+    if (!pointerDown) return;
+    if (Math.abs(e.clientX-startX)>5||Math.abs(e.clientY-startY)>5) pointerMoved = true;
+    lon -= (e.clientX - lastX) * 0.2;
+    lat += (e.clientY - lastY) * 0.2;
+    lat = Math.max(-55, Math.min(55, lat));
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  document.addEventListener('pointerup', () => { pointerDown = false; });
+
+  // Hotspot projection
+  function updateHotspots() {
+    const layer = document.getElementById('hotspot-layer');
+    layer.innerHTML = '';
+    const s = TOUR.scenes.find(sc => sc.id === currentSceneId);
+    if (!s) return;
+    s.hotspots.forEach(hs => {
+      const phi = (90 - hs.lat) * Math.PI / 180;
+      const theta = hs.lon * Math.PI / 180;
+      const pos = new THREE.Vector3().setFromSphericalCoords(450, phi, theta);
+      const projected = pos.clone().project(camera);
+      if (projected.z > 1) return;
+      const sx = (projected.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+
+      const el = document.createElement('div');
+      el.className = 'viewer-hotspot hs-' + hs.type;
+      el.style.left = sx + 'px';
+      el.style.top = sy + 'px';
+      el.style.pointerEvents = 'auto';
+      el.innerHTML = hs.icon + '<span class="hs-label">' + (hs.label||'') + '</span>';
+      el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
+      layer.appendChild(el);
+    });
+  }
+
+  // 3D info panel for VR
+  const vrPanelGroup = new THREE.Group();
+  scene.add(vrPanelGroup);
+  vrPanelGroup.visible = false;
+
+  function makeTextCanvas(title, body, width, height) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, width, height, 20);
+    ctx.fill();
+    ctx.strokeStyle = '#ff7a00';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.fillStyle = '#ff7a00';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText(title, 30, 60, width - 60);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '32px sans-serif';
+    const words = body.split(' ');
+    let line = '';
+    let y = 110;
+    words.forEach(w => {
+      const test = line + w + ' ';
+      if (ctx.measureText(test).width > width - 60) {
+        ctx.fillText(line, 30, y);
+        line = w + ' ';
+        y += 40;
+      } else {
+        line = test;
+      }
+    });
+    if (line) ctx.fillText(line, 30, y);
+    // Close button
+    ctx.fillStyle = '#ff7a00';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('\\u2716 Close', width / 2, height - 30);
+    return canvas;
+  }
+
+  let vrPanelMesh = null;
+  let vrPanelCloseMesh = null;
+  let vrPanelOpenTime = 0;
+  const VR_PANEL_COOLDOWN = 3.0;
+
+  function makeCloseButton() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#cc0000';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 256, 64, 12);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Close', 128, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(3, 0.8),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false })
+    );
+    mesh.userData = { isCloseButton: true };
+    return mesh;
+  }
+
+  function showVRPanel(title, body) {
+    hideVRPanel();
+    vrPanelOpenTime = performance.now();
+    const canvas = makeTextCanvas(title, body, 512, 320);
+    const tex = new THREE.CanvasTexture(canvas);
+    const panelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false });
+    vrPanelMesh = new THREE.Mesh(new THREE.PlaneGeometry(8, 5), panelMat);
+    vrPanelGroup.add(vrPanelMesh);
+
+    vrPanelCloseMesh = makeCloseButton();
+    vrPanelCloseMesh.position.set(0, -3.4, 0.01);
+    vrPanelGroup.add(vrPanelCloseMesh);
+
+    // Position in front of viewer
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+    vrPanelGroup.position.copy(camPos).add(camDir.clone().multiplyScalar(15));
+    vrPanelGroup.lookAt(camPos);
+    vrPanelGroup.visible = true;
+  }
+
+  function hideVRPanel() {
+    while (vrPanelGroup.children.length) {
+      const c = vrPanelGroup.children[0];
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) { if (c.material.map) c.material.map.dispose(); c.material.dispose(); }
+      vrPanelGroup.remove(c);
+    }
+    vrPanelGroup.visible = false;
+    vrPanelMesh = null;
+    vrPanelCloseMesh = null;
+  }
+
+  function handleHotspotClick(hs) {
+    if (hs.type === 'nav' && hs.target) {
+      goToScene(parseInt(hs.target));
+    } else if (hs.type === 'info') {
+      if (renderer.xr.isPresenting) {
+        showVRPanel(hs.infoTitle || 'Info', hs.infoBody || '');
+      } else {
+        document.getElementById('info-modal-title').textContent = hs.infoTitle || 'Info';
+        document.getElementById('info-modal-body').textContent = hs.infoBody || '';
+        document.getElementById('info-modal').classList.add('open');
+      }
+    } else if (hs.type === 'media') {
+      if (renderer.xr.isPresenting) {
+        if (hs.imageData) {
+          showVRImage(hs.imageData);
+        } else {
+          const url = hs.videoUrl || hs.linkUrl || '';
+          showVRPanel('Media', url ? 'Link: ' + url : 'No media URL set');
+        }
+      } else {
+        if (hs.imageData) {
+          showFlatImage(hs.imageData);
+        } else if (hs.videoUrl) {
+          window.open(hs.videoUrl, '_blank');
+        } else if (hs.linkUrl) {
+          window.open(hs.linkUrl, '_blank');
+        }
+      }
+    }
+  }
+
+  // Flat mode image popup
+  function showFlatImage(imgSrc) {
+    const modal = document.getElementById('info-modal');
+    document.getElementById('info-modal-title').textContent = '';
+    document.getElementById('info-modal-body').innerHTML = '<img src="' + imgSrc + '" style="max-width:90vw;max-height:80vh;border-radius:8px">';
+    modal.classList.add('open');
+  }
+
+  // VR image panel
+  function showVRImage(imgSrc) {
+    hideVRPanel();
+    vrPanelOpenTime = performance.now();
+    const img = new Image();
+    img.onload = () => {
+      const aspect = img.width / img.height;
+      const tex = new THREE.Texture(img);
+      tex.needsUpdate = true;
+      const panelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false });
+      const h = 8;
+      const w = h * aspect;
+      vrPanelMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), panelMat);
+      vrPanelGroup.add(vrPanelMesh);
+
+      vrPanelCloseMesh = makeCloseButton();
+      vrPanelCloseMesh.position.set(0, -(h / 2 + 1.2), 0.01);
+      vrPanelGroup.add(vrPanelCloseMesh);
+
+      const xrCam = renderer.xr.getCamera();
+      const camPos = new THREE.Vector3();
+      const camDir = new THREE.Vector3();
+      xrCam.getWorldPosition(camPos);
+      xrCam.getWorldDirection(camDir);
+      vrPanelGroup.position.copy(camPos).add(camDir.clone().multiplyScalar(15));
+      vrPanelGroup.lookAt(camPos);
+      vrPanelGroup.visible = true;
+    };
+    img.src = imgSrc;
+  }
+
+  document.getElementById('info-close').onclick = () => document.getElementById('info-modal').classList.remove('open');
+  document.getElementById('info-modal').onclick = (e) => { if (e.target === document.getElementById('info-modal')) document.getElementById('info-modal').classList.remove('open'); };
+
+  // VR controller rays
+  function makeControllerRay() {
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -500)
+    ]);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xff7a00, linewidth: 2, transparent: true, opacity: 0.6 });
+    return new THREE.Line(lineGeo, lineMat);
+  }
+
+  const controller1 = renderer.xr.getController(0);
+  controller1.add(makeControllerRay());
+  controller1.addEventListener('select', onVRSelect);
+  scene.add(controller1);
+
+  const controller2 = renderer.xr.getController(1);
+  controller2.add(makeControllerRay());
+  controller2.addEventListener('select', onVRSelect);
+  scene.add(controller2);
+
+  function onVRSelect(event) {
+    const controller = event.target;
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+    // Check close button first
+    if (vrPanelGroup.visible && vrPanelCloseMesh) {
+      const panelHits = raycaster.intersectObject(vrPanelCloseMesh);
+      if (panelHits.length > 0) { hideVRPanel(); return; }
+      const fullPanelHits = raycaster.intersectObjects(vrPanelGroup.children);
+      if (fullPanelHits.length > 0) { hideVRPanel(); return; }
+    }
+
+    const hits = raycaster.intersectObjects(vrHotspotGroup.children);
+    if (hits.length > 0) {
+      const hs = hits[0].object.userData;
+      handleHotspotClick(hs);
+    }
+  }
+
+
+  // WebXR
+  if (navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+      if (supported) {
+        const btn = document.getElementById('vr-button');
+        btn.style.display = 'block';
+        btn.onclick = () => {
+          btn.textContent = 'Starting VR...';
+          btn.style.background = '#555';
+          navigator.xr.requestSession('immersive-vr').then(session => {
+            btn.textContent = 'Exit VR';
+            btn.style.background = '#c00';
+            renderer.xr.setSession(session);
+            session.addEventListener('end', () => {
+              btn.textContent = 'Enter VR';
+              btn.style.background = '#ff7a00';
+            });
+          }).catch(err => {
+            btn.textContent = 'VR Error: ' + err.message;
+            btn.style.background = '#c00';
+            setTimeout(() => { btn.textContent = 'Enter VR'; btn.style.background = '#ff7a00'; }, 4000);
+          });
+        };
+      }
+    }).catch(() => {});
+  }
+
+  // Gaze system with two orange circles
+  const gazeGroup = new THREE.Group();
+  scene.add(gazeGroup);
+  gazeGroup.visible = false;
+
+  // Inner ring (static, shows you're targeting something)
+  const gazeInnerRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.15, 0.25, 32),
+    new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false })
+  );
+  gazeGroup.add(gazeInnerRing);
+
+  // Outer ring (progress, fills up over dwell time)
+  const gazeRingMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthTest: false });
+  const gazeRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32, 1, 0, 0), gazeRingMat);
+  gazeGroup.add(gazeRing);
+
+  let gazeTarget = null;
+  let gazeTimer = 0;
+  const GAZE_DWELL = 2.0;
+  let lastFrameTime = performance.now();
+
+  function updateGaze() {
+    const now = performance.now();
+    const dt = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
+
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+
+    raycaster.ray.origin.copy(camPos);
+    raycaster.ray.direction.copy(camDir);
+
+    // Check VR panel first (with cooldown so it doesn't auto-close)
+    if (vrPanelGroup.visible) {
+      const elapsed = (performance.now() - vrPanelOpenTime) / 1000;
+      if (elapsed > VR_PANEL_COOLDOWN) {
+        const panelHits = raycaster.intersectObjects(vrPanelGroup.children);
+        if (panelHits.length > 0) {
+          gazeGroup.visible = true;
+          if (gazeTarget === vrPanelGroup) {
+            gazeTimer += dt;
+            const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
+            gazeRing.geometry.dispose();
+            gazeRing.geometry = new THREE.RingGeometry(0.28, 0.38, 32, 1, 0, pct * Math.PI * 2);
+            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGroup.visible = false; }
+          } else { gazeTarget = vrPanelGroup; gazeTimer = 0; }
+          return;
+        }
+      } else {
+        // During cooldown, don't gaze-close but still block hotspot activation behind panel
+        return;
+      }
+    }
+
+    const hits = raycaster.intersectObjects(vrHotspotGroup.children);
+    if (hits.length > 0) {
+      const target = hits[0].object;
+      // Position gaze ring on the hotspot, facing the camera
+      gazeGroup.position.copy(target.position);
+      gazeGroup.lookAt(camPos);
+      gazeGroup.visible = true;
+      if (gazeTarget === target) {
+        gazeTimer += dt;
+        const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
+        gazeRing.geometry.dispose();
+        gazeRing.geometry = new THREE.RingGeometry(3.5, 4.5, 32, 1, 0, pct * Math.PI * 2);
+        gazeInnerRing.geometry.dispose();
+        gazeInnerRing.geometry = new THREE.RingGeometry(2, 3, 32);
+        if (gazeTimer >= GAZE_DWELL) {
+          handleHotspotClick(target.userData);
+          gazeTarget = null;
+          gazeTimer = 0;
+          gazeGroup.visible = false;
+        }
+      } else { gazeTarget = target; gazeTimer = 0; }
+    } else {
+      gazeTarget = null;
+      gazeTimer = 0;
+      gazeGroup.visible = false;
+    }
+  }
+
+  // VR Minimap HUD (3D plane with canvas texture)
+  const vrMinimapCanvas = document.createElement('canvas');
+  vrMinimapCanvas.width = 512;
+  vrMinimapCanvas.height = 512;
+  const vrMinimapTex = new THREE.CanvasTexture(vrMinimapCanvas);
+  const vrMinimapMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.2, 1.2),
+    new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapMesh.renderOrder = 999;
+  scene.add(vrMinimapMesh);
+  vrMinimapMesh.visible = false;
+
+  function drawVRMinimap() {
+    const ctx = vrMinimapCanvas.getContext('2d');
+    const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Background: floor plan or dark box
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(10, 10, W - 20, H - 20, 24);
+    ctx.clip();
+    if (minimapFloorImg && minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
+      ctx.drawImage(minimapFloorImg, 10, 10, W - 20, H - 20);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(10, 10, W - 20, H - 20);
+    } else {
+      ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
+      ctx.fillRect(10, 10, W - 20, H - 20);
+    }
+    ctx.restore();
+    ctx.beginPath();
+    ctx.roundRect(10, 10, W - 20, H - 20, 24);
+    ctx.strokeStyle = 'rgba(255,122,0,0.5)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const scenes = TOUR.scenes;
+    if (!scenes.length) return;
+    const pad = 60;
+    const positions = getScenePositions(W, H, pad);
+
+    // Connection lines
+    ctx.lineWidth = 3;
+    scenes.forEach(s => {
+      s.hotspots.forEach(hs => {
+        if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
+          const from = positions[s.id];
+          const to = positions[parseInt(hs.target)];
+          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.7)' : 'rgba(255,255,255,0.25)';
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.stroke();
+        }
+      });
+    });
+
+    // Scene nodes
+    scenes.forEach(s => {
+      const p = positions[s.id];
+      const isCurrent = s.id === currentSceneId;
+      const r = isCurrent ? 28 : 20;
+
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20; }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100, 120, 160, 0.7)';
+      ctx.fill();
+      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = isCurrent ? 3 : 2;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Hotspot dots
+      s.hotspots.forEach((hs, hi) => {
+        const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(p.x + (r + 12) * Math.cos(a), p.y + (r + 12) * Math.sin(a), 5, 0, Math.PI * 2);
+        ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        ctx.fill();
+      });
+
+      // Label
+      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.65)';
+      ctx.font = (isCurrent ? 'bold ' : '') + '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 28);
+    });
+
+    ctx.fillStyle = 'rgba(255,122,0,0.9)';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('PLAN VIEW', 24, 38);
+
+    vrMinimapTex.needsUpdate = true;
+  }
+
+  function updateVRMinimapPosition() {
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    const camRight = new THREE.Vector3();
+    const camUp = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+    // Get camera right and up vectors
+    camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+    camUp.crossVectors(camRight, camDir).normalize();
+    // Position: lower-left of view — forward 3m, left 1.1m, down 0.8m
+    vrMinimapMesh.position.copy(camPos)
+      .add(camDir.clone().multiplyScalar(3))
+      .add(camRight.clone().multiplyScalar(-1.1))
+      .add(camUp.clone().multiplyScalar(-0.8));
+    vrMinimapMesh.lookAt(camPos);
+  }
+
+  // Animate
+  function animate() {
+    renderer.setAnimationLoop(() => {
+      if (!renderer.xr.isPresenting) {
+        const phi = (90 - lat) * Math.PI / 180;
+        const theta = lon * Math.PI / 180;
+        camera.lookAt(new THREE.Vector3(
+          Math.sin(phi)*Math.cos(theta),
+          Math.cos(phi),
+          Math.sin(phi)*Math.sin(theta)
+        ));
+        vrMinimapMesh.visible = false;
+      } else {
+        updateGaze();
+        vrMinimapMesh.visible = true;
+        updateVRMinimapPosition();
+      }
+      renderer.render(scene, camera);
+      if (!renderer.xr.isPresenting) updateHotspots();
+    });
+  }
+
+  loadScene(currentSceneId);
+  animate();
+})();
+<\/script>
+</body>
+</html>`;
+  }
+
+  // === Helpers ===
+  function getCurrentScene() { return state.scenes.find(s => s.id === state.currentSceneId); }
+  function getSelectedHotspot() {
+    const scn = getCurrentScene();
+    if (!scn) return null;
+    return scn.hotspots.find(h => h.id === state.selectedHotspotId) || null;
+  }
+
+  // === Toolbar Events ===
+  document.getElementById('btn-add-scene').addEventListener('click', () => fileScene.click());
+  document.getElementById('btn-save').addEventListener('click', saveProject);
+  document.getElementById('btn-load').addEventListener('click', async () => {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: 'JSON Project', accept: { 'application/json': ['.json'] } }]
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        loadProject(text);
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    fileLoad.click();
+  });
+  document.getElementById('btn-export').addEventListener('click', exportTour);
+
+  fileScene.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    for (const file of files) {
+      const result = await processImage(file);
+      addScene(result.dataUrl, file.name.replace(/\.[^.]+$/, ''), result.isStereo);
+    }
+    fileScene.value = '';
+  });
+
+  fileLoad.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => loadProject(ev.target.result);
+    reader.readAsText(file);
+    fileLoad.value = '';
+  });
+
+  // === Context Menu ===
+  const ctxMenu = document.getElementById('ctx-menu');
+  let ctxTargetScene = null;
+
+  function showContextMenu(x, y, scn) {
+    ctxTargetScene = scn;
+    ctxMenu.style.left = x + 'px';
+    ctxMenu.style.top = y + 'px';
+    ctxMenu.style.display = 'block';
+  }
+
+  function hideContextMenu() {
+    ctxMenu.style.display = 'none';
+    ctxTargetScene = null;
+  }
+
+  document.addEventListener('click', hideContextMenu);
+
+  document.getElementById('ctx-rename').addEventListener('click', () => {
+    if (!ctxTargetScene) return;
+    const scn = ctxTargetScene;
+    hideContextMenu();
+    const item = sceneListEl.querySelector(`[data-scene-id="${scn.id}"]`);
+    if (item) {
+      const span = item.querySelector('span');
+      if (span) inlineRenameScene(item, span, scn);
+    }
+  });
+
+  document.getElementById('ctx-delete').addEventListener('click', () => {
+    if (!ctxTargetScene) return;
+    const scn = ctxTargetScene;
+    hideContextMenu();
+    if (!confirm('Delete scene "' + scn.name + '"? All hotspots targeting it will also be removed.')) return;
+    const scnId = scn.id;
+    // Remove hotspots targeting this scene from all other scenes
+    state.scenes.forEach(s => {
+      s.hotspots = s.hotspots.filter(h => !(h.type === 'nav' && h.target == scnId));
+    });
+    // Remove the scene
+    state.scenes = state.scenes.filter(s => s.id !== scnId);
+    if (state.currentSceneId === scnId) {
+      if (state.scenes.length > 0) {
+        selectScene(state.scenes[0].id);
+      } else {
+        state.currentSceneId = null;
+        deselectHotspot();
+        renderer.domElement.style.display = 'none';
+        emptyState.style.display = 'block';
+      }
+    }
+    renderSceneList();
+  });
+
+  // === Keyboard Shortcuts ===
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+    if (e.key === 'Delete') {
+      const scn = getCurrentScene();
+      const hs = getSelectedHotspot();
+      if (scn && hs) {
+        scn.hotspots = scn.hotspots.filter(h => h.id !== hs.id);
+        deselectHotspot();
+      }
+    } else if (e.key === 'Escape') {
+      deselectHotspot();
+    } else if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      saveProject();
+    } else if (e.ctrlKey && e.key === 'e') {
+      e.preventDefault();
+      exportTour();
+    }
+  });
+
+  // === Floor Plan Editor ===
+  const fpModal = document.getElementById('floorplan-modal');
+  const fpCanvas = document.getElementById('floorplan-canvas');
+  const fpCtx = fpCanvas.getContext('2d');
+  const fileFloorplan = document.getElementById('file-floorplan');
+  let fpImage = null;
+  let fpDragging = null; // scene id being dragged
+
+  document.getElementById('btn-floorplan').addEventListener('click', () => {
+    fpModal.classList.add('open');
+    requestAnimationFrame(() => loadFloorPlanImage(() => drawFloorPlan()));
+  });
+  document.getElementById('fp-close').addEventListener('click', () => fpModal.classList.remove('open'));
+  document.getElementById('fp-upload').addEventListener('click', () => fileFloorplan.click());
+  document.getElementById('fp-remove').addEventListener('click', () => {
+    state.floorPlan = null;
+    fpImage = null;
+    state.scenes.forEach(s => { s.planX = null; s.planY = null; });
+    drawFloorPlan();
+  });
+
+  fileFloorplan.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      state.floorPlan = ev.target.result;
+      loadFloorPlanImage(() => {
+        // Auto-distribute scenes if none are placed
+        const unplaced = state.scenes.filter(s => s.planX == null);
+        if (unplaced.length === state.scenes.length && unplaced.length > 0) {
+          const cols = Math.ceil(Math.sqrt(unplaced.length));
+          unplaced.forEach((s, i) => {
+            s.planX = ((i % cols) + 0.5) / cols;
+            s.planY = (Math.floor(i / cols) + 0.5) / Math.ceil(unplaced.length / cols);
+          });
+        }
+        drawFloorPlan();
+      });
+    };
+    reader.readAsDataURL(file);
+    fileFloorplan.value = '';
+  });
+
+  function loadFloorPlanImage(cb) {
+    if (!state.floorPlan) { fpImage = null; if (cb) cb(); return; }
+    if (fpImage && fpImage.src === state.floorPlan) { if (cb) cb(); return; }
+    const img = new Image();
+    img.onload = () => { fpImage = img; if (cb) cb(); };
+    img.src = state.floorPlan;
+  }
+
+  function drawFloorPlan() {
+    const container = document.getElementById('floorplan-body');
+    const cw = container.clientWidth || 800;
+    const ch = container.clientHeight || 600;
+    fpCanvas.width = cw;
+    fpCanvas.height = ch;
+    fpCtx.clearRect(0, 0, cw, ch);
+
+    let drawX = 0, drawY = 0, drawW = cw, drawH = ch;
+
+    if (fpImage) {
+      const imgAspect = fpImage.width / fpImage.height;
+      const canAspect = cw / ch;
+      if (imgAspect > canAspect) {
+        drawW = cw; drawH = cw / imgAspect;
+        drawX = 0; drawY = (ch - drawH) / 2;
+      } else {
+        drawH = ch; drawW = ch * imgAspect;
+        drawX = (cw - drawW) / 2; drawY = 0;
+      }
+      fpCtx.fillStyle = '#0a0a1a';
+      fpCtx.fillRect(0, 0, cw, ch);
+      fpCtx.drawImage(fpImage, drawX, drawY, drawW, drawH);
+      fpCtx.fillStyle = 'rgba(0,0,0,0.15)';
+      fpCtx.fillRect(drawX, drawY, drawW, drawH);
+    } else {
+      fpCtx.fillStyle = '#1a1a3a';
+      fpCtx.fillRect(0, 0, cw, ch);
+      // Grid lines for reference
+      fpCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+      fpCtx.lineWidth = 1;
+      for (let x = 0; x < cw; x += 40) { fpCtx.beginPath(); fpCtx.moveTo(x, 0); fpCtx.lineTo(x, ch); fpCtx.stroke(); }
+      for (let y = 0; y < ch; y += 40) { fpCtx.beginPath(); fpCtx.moveTo(0, y); fpCtx.lineTo(cw, y); fpCtx.stroke(); }
+    }
+
+    // Store draw area for hit testing (full canvas when no image)
+    fpCanvas._drawArea = { x: drawX, y: drawY, w: drawW, h: drawH };
+
+    // Show unplaced scenes list
+    const unplaced = state.scenes.filter(s => s.planX == null);
+    if (unplaced.length > 0) {
+      fpCtx.fillStyle = 'rgba(0,0,0,0.7)';
+      fpCtx.fillRect(8, 8, 200, 20 + unplaced.length * 22);
+      fpCtx.fillStyle = '#ff7a00';
+      fpCtx.font = 'bold 12px sans-serif';
+      fpCtx.textAlign = 'left';
+      fpCtx.fillText('Click on plan to place:', 14, 24);
+      unplaced.forEach((s, i) => {
+        fpCtx.fillStyle = '#eee';
+        fpCtx.font = '12px sans-serif';
+        fpCtx.fillText('• ' + s.name, 20, 42 + i * 22);
+      });
+    }
+
+    // Draw connections
+    fpCtx.lineWidth = 2;
+    state.scenes.forEach(s => {
+      if (s.planX == null) return;
+      s.hotspots.forEach(hs => {
+        if (hs.type !== 'nav' || !hs.target) return;
+        const ts = state.scenes.find(t => t.id === parseInt(hs.target));
+        if (!ts || ts.planX == null) return;
+        const x1 = drawX + s.planX * drawW, y1 = drawY + s.planY * drawH;
+        const x2 = drawX + ts.planX * drawW, y2 = drawY + ts.planY * drawH;
+        fpCtx.strokeStyle = 'rgba(255,122,0,0.5)';
+        fpCtx.beginPath();
+        fpCtx.moveTo(x1, y1);
+        fpCtx.lineTo(x2, y2);
+        fpCtx.stroke();
+      });
+    });
+
+    // Draw scene markers
+    state.scenes.forEach(s => {
+      if (s.planX == null) return;
+      const px = drawX + s.planX * drawW;
+      const py = drawY + s.planY * drawH;
+      const isCurrent = s.id === state.currentSceneId;
+      const r = isCurrent ? 16 : 12;
+
+      if (isCurrent) { fpCtx.shadowColor = '#ff7a00'; fpCtx.shadowBlur = 16; }
+      fpCtx.beginPath();
+      fpCtx.arc(px, py, r, 0, Math.PI * 2);
+      fpCtx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(100,120,160,0.85)';
+      fpCtx.fill();
+      fpCtx.strokeStyle = '#fff';
+      fpCtx.lineWidth = 2;
+      fpCtx.stroke();
+      fpCtx.shadowBlur = 0;
+
+      // Hotspot dots
+      s.hotspots.forEach((hs, hi) => {
+        const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
+        const hx = px + (r + 8) * Math.cos(a);
+        const hy = py + (r + 8) * Math.sin(a);
+        fpCtx.beginPath();
+        fpCtx.arc(hx, hy, 4, 0, Math.PI * 2);
+        fpCtx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        fpCtx.fill();
+      });
+
+      // Label
+      fpCtx.fillStyle = '#fff';
+      fpCtx.font = (isCurrent ? 'bold ' : '') + '12px sans-serif';
+      fpCtx.textAlign = 'center';
+      fpCtx.fillText(s.name, px, py + r + 16);
+    });
+  }
+
+  // Drag scene markers on floor plan
+  fpCanvas.addEventListener('mousedown', (e) => {
+    if (!fpCanvas._drawArea) return;
+    const rect = fpCanvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (fpCanvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
+    const da = fpCanvas._drawArea;
+
+    for (const s of state.scenes) {
+      if (s.planX == null) continue;
+      const px = da.x + s.planX * da.w;
+      const py = da.y + s.planY * da.h;
+      if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < 20) {
+        fpDragging = s.id;
+        return;
+      }
+    }
+    // Click on empty floor plan area = place unplaced scene or current scene
+    const nx = (mx - da.x) / da.w;
+    const ny = (my - da.y) / da.h;
+    if (nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1) {
+      const unplaced = state.scenes.find(s => s.planX == null);
+      if (unplaced) {
+        unplaced.planX = nx;
+        unplaced.planY = ny;
+        drawFloorPlan();
+      }
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!fpDragging || !fpCanvas._drawArea) return;
+    const rect = fpCanvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (fpCanvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
+    const da = fpCanvas._drawArea;
+    const s = state.scenes.find(sc => sc.id === fpDragging);
+    if (s) {
+      s.planX = Math.max(0, Math.min(1, (mx - da.x) / da.w));
+      s.planY = Math.max(0, Math.min(1, (my - da.y) / da.h));
+      drawFloorPlan();
+    }
+  });
+
+  document.addEventListener('mouseup', () => { fpDragging = null; });
+
+  // === Init ===
+  if (typeof THREE === 'undefined') {
+    alert('Three.js failed to load. Make sure you have internet connection or open via a local server (not file://).');
+  } else {
+    initThree();
+    setupPointerEvents();
+    setupPropsEvents();
+    onResize();
+  }
+})();
+</script>
+</body>
+</html>
