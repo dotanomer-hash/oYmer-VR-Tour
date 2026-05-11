@@ -1960,12 +1960,13 @@ ${threeJsSrc}
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Hotspot dots
-      s.hotspots.forEach((hs, hi) => {
-        const a = (hi / s.hotspots.length) * Math.PI * 2 - Math.PI / 2;
+      // Nav hotspot dots only
+      const navHotspots = s.hotspots.filter(h => h.type === 'nav');
+      navHotspots.forEach((hs, hi) => {
+        const a = (hi / navHotspots.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
         ctx.arc(p.x + (r + 12 * nodeScale * zoomScale) * Math.cos(a), p.y + (r + 12 * nodeScale * zoomScale) * Math.sin(a), 5 * nodeScale * zoomScale, 0, Math.PI * 2);
-        ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        ctx.fillStyle = '#ff7a00';
         ctx.fill();
       });
 
