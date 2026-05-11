@@ -2152,8 +2152,8 @@ ${threeJsSrc}
             const pos = new THREE.Vector3();
             controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 0.3;
-              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 0.3;
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 1.5;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 1.5;
               if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 mapPanX += dx;
                 mapPanY += dy;
