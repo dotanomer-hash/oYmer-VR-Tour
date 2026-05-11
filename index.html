@@ -1023,6 +1023,9 @@ ${threeJsSrc}
       hitMesh.position.copy(hsPos);
       hitMesh.lookAt(0, 0, 0);
       hitMesh.userData = hs;
+      hitMesh.userData._hsColor = color;
+      hitMesh.userData._hsIcon = iconChar;
+      hitMesh.userData._hsTex = hsMesh.material.map;
       vrHotspotGroup.add(hitMesh);
       vrHotspotGroup.add(hsMesh);
     });
@@ -1619,9 +1622,9 @@ ${threeJsSrc}
     }).catch(() => {});
   }
 
-  // Gaze system — clockwise pie fill directly on the hotspot
-  const gazeFillMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false });
-  const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(4.2, 48, -Math.PI / 2, 0.01), gazeFillMat);
+  // Gaze system — clockwise pie fill that looks like the hotspot itself filling in
+  const gazeFillMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide, depthTest: false });
+  const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(4, 48, -Math.PI / 2, 0.01), gazeFillMat);
   gazeFillMesh.renderOrder = 998;
   gazeFillMesh.visible = false;
   scene.add(gazeFillMesh);
@@ -1681,7 +1684,7 @@ ${threeJsSrc}
       // Position the pie fill on the hotspot, facing camera, slightly in front
       gazeFillMesh.position.copy(hitTarget.position);
       const toCamera = camPos.clone().sub(hitTarget.position).normalize();
-      gazeFillMesh.position.add(toCamera.multiplyScalar(0.5));
+      gazeFillMesh.position.add(toCamera.multiplyScalar(0.3));
       gazeFillMesh.lookAt(camPos);
       gazeFillMesh.visible = true;
 
@@ -1691,13 +1694,22 @@ ${threeJsSrc}
         gazeTarget = hitTarget;
         gazeTimer = 0;
         gazeGrace = 0;
+        // Match the hotspot's own texture so the fill looks like the hotspot revealing itself
+        if (hitTarget.userData._hsTex) {
+          gazeFillMat.map = hitTarget.userData._hsTex;
+          gazeFillMat.color.set(0xffffff);
+        } else {
+          gazeFillMat.map = null;
+          gazeFillMat.color.set(hitTarget.userData._hsColor || 0xff7a00);
+        }
+        gazeFillMat.needsUpdate = true;
       }
       const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-      // Rebuild pie: clockwise sweep from top, opacity increases with progress
+      // Rebuild pie: clockwise sweep from top — reveals the hotspot image progressively
       gazeFillMesh.geometry.dispose();
       const arc = Math.max(0.05, pct) * Math.PI * 2;
-      gazeFillMesh.geometry = new THREE.CircleGeometry(4.2, 48, -Math.PI / 2, arc);
-      gazeFillMat.opacity = 0.3 + 0.6 * pct;
+      gazeFillMesh.geometry = new THREE.CircleGeometry(4, 48, -Math.PI / 2, arc);
+      gazeFillMat.opacity = 1.0;
 
       if (gazeTimer >= GAZE_DWELL) {
         handleHotspotClick(hitTarget.userData);
