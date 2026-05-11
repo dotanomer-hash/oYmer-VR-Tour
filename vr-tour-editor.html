@@ -1797,8 +1797,7 @@ ${threeJsSrc}
 
   // VR Minimap HUD (3D plane with canvas texture)
   const vrMinimapCanvas = document.createElement('canvas');
-  // Use high-res canvas matching floor plan aspect ratio
-  let mapAspect = 1189 / 841; // A0 default (height/width ≈ 1.414)
+  let mapAspect = 0.754; // default landscape, updated when image loads
   let mapCanvasW = 2048;
   let mapCanvasH = Math.round(2048 * mapAspect);
   vrMinimapCanvas.width = mapCanvasW;
@@ -1806,8 +1805,16 @@ ${threeJsSrc}
   const vrMinimapTex = new THREE.CanvasTexture(vrMinimapCanvas);
   vrMinimapTex.minFilter = THREE.LinearFilter;
   vrMinimapTex.magFilter = THREE.LinearFilter;
+
+  function getSmallPlaneSize() {
+    // Landscape: wider. Portrait: taller.
+    const w = mapAspect < 1 ? 1.2 : 0.8;
+    return { w: w, h: w * mapAspect };
+  }
+
+  const smallSize = getSmallPlaneSize();
   const vrMinimapMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.8, 0.8 * mapAspect),
+    new THREE.PlaneGeometry(smallSize.w, smallSize.h),
     new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapMesh.renderOrder = 999;
@@ -1817,36 +1824,31 @@ ${threeJsSrc}
   let mapZoom = 1.0;
   let mapPanX = 0, mapPanY = 0;
   let mapNeedsRedraw = false;
-  let mapDragStart = null; // controller position when trigger drag started
+  let mapDragStart = null;
+  let mapTriggerHeld = false;
+  let mapImageReady = false;
 
-  let mapTriggerHeld = false; // trigger held = pan mode
-
-  // Update canvas and geometry when floor plan image loads
-  function updateMapAspect() {
-    if (!minimapFloorImg || !minimapFloorImg.complete || !minimapFloorImg.naturalWidth) return;
-    mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
-    mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
-    mapCanvasH = Math.round(mapCanvasW * mapAspect);
-    if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-    vrMinimapCanvas.width = mapCanvasW;
-    vrMinimapCanvas.height = mapCanvasH;
-    // Rebuild geometry with correct aspect — wider maps get wider plane
-    const planeW = mapAspect < 1 ? 1.0 : 0.8;
-    const planeH = mapAspect < 1 ? planeW * mapAspect : 0.8 * mapAspect;
-    vrMinimapMesh.geometry.dispose();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(planeW, planeH);
-    vrMinimapTex.needsUpdate = true;
-    drawVRMinimap();
-  }
+  // Update everything when floor plan image loads
   if (minimapFloorImg) {
-    const waitForImg = () => {
-      if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
-        updateMapAspect();
-      } else {
-        setTimeout(waitForImg, 100);
-      }
+    minimapFloorImg.onload = function() {
+      mapAspect = this.naturalHeight / this.naturalWidth;
+      mapCanvasW = Math.min(this.naturalWidth, 4096);
+      mapCanvasH = Math.round(mapCanvasW * mapAspect);
+      if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+      vrMinimapCanvas.width = mapCanvasW;
+      vrMinimapCanvas.height = mapCanvasH;
+      // Rebuild geometry with actual aspect ratio
+      const sz = getSmallPlaneSize();
+      vrMinimapMesh.geometry.dispose();
+      vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+      mapImageReady = true;
+      drawVRMinimap();
+      vrMinimapTex.needsUpdate = true;
     };
-    waitForImg();
+    // If already loaded (base64 data URL)
+    if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
+      minimapFloorImg.onload();
+    }
   }
 
   function drawVRMinimap() {
@@ -2016,10 +2018,10 @@ ${threeJsSrc}
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
+    mapDragStart = null;
     vrMinimapMesh.geometry.dispose();
-    const smW = mapAspect < 1 ? 1.0 : 0.8;
-    const smH = mapAspect < 1 ? smW * mapAspect : 0.8 * mapAspect;
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(smW, smH);
+    const sz = getSmallPlaneSize();
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
     vrMinimapMesh.material.opacity = 0.85;
     vrMinimapMesh.material.depthTest = false;
     vrMinimapMesh.material.depthWrite = false;
@@ -2125,31 +2127,40 @@ ${threeJsSrc}
         if (!vrMinimapHidden) updateVRMinimapPosition();
         updateRayDots();
 
-        // Map controls: thumbstick = zoom, hold trigger + move controller = pan
+        // Map controls: thumbstick = zoom, hold trigger + drag controller = pan
         if (vrMinimapActive) {
-          // Thumbstick zoom
+          // Thumbstick zoom (only redraw if value actually changes)
           const session = renderer.xr.getSession();
           if (session) {
-            const sources = Array.from(session.inputSources).filter(s => s.gamepad && s.gamepad.axes.length >= 4);
-            for (const src of sources) {
+            for (const src of session.inputSources) {
+              if (!src.gamepad || src.gamepad.axes.length < 4) continue;
               const ay = src.gamepad.axes[3];
-              if (Math.abs(ay) > 0.15) {
-                mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.05));
-                mapNeedsRedraw = true;
+              if (Math.abs(ay) > 0.2) {
+                const oldZoom = mapZoom;
+                mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.04));
+                if (Math.abs(mapZoom - oldZoom) > 0.001) mapNeedsRedraw = true;
               }
             }
           }
-          // Trigger held + controller movement = pan
+          // Trigger held + controller drag = pan the map
           if (mapTriggerHeld) {
-            const ctrl = controller1.matrixWorld ? controller1 : controller2;
+            // Get controller world position projected onto the map plane
             const pos = new THREE.Vector3();
-            ctrl.getWorldPosition(pos);
+            controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * 800;
-              const dy = -(pos.y - mapDragStart.y) * 800;
-              mapPanX += dx;
-              mapPanY += dy;
-              mapNeedsRedraw = true;
+              // Convert world-space movement to canvas-space pan
+              // Project delta onto map's local axes
+              const right = new THREE.Vector3();
+              const up = new THREE.Vector3();
+              vrMinimapMesh.matrixWorld.extractBasis(right, up, new THREE.Vector3());
+              const delta = pos.clone().sub(mapDragStart);
+              const dx = delta.dot(right) * mapCanvasW * 0.5;
+              const dy = -delta.dot(up) * mapCanvasH * 0.5;
+              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                mapPanX += dx;
+                mapPanY += dy;
+                mapNeedsRedraw = true;
+              }
             }
             mapDragStart = pos.clone();
           } else {
