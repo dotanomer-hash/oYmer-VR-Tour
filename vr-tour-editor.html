@@ -1643,16 +1643,20 @@ ${threeJsSrc}
     }
 
     // If minimap is ACTIVE (enlarged):
-    // - Trigger click (no drag) on scene node → navigate
+    // - Double-click trigger on scene node → navigate
     // - Trigger drag → pan (handled in animate loop)
     // - Grip → exit map (handled in onGrip)
     // - Never exit map from trigger
     if (vrMinimapActive) {
-      if (!mapDidDrag) {
+      const now = performance.now();
+      if (now - mapLastClick < 800) {
         const mapHits = raycaster.intersectObject(vrMinimapMesh);
         if (mapHits.length > 0) {
           handleVRMinimapClick(mapHits[0].uv);
         }
+        mapLastClick = 0;
+      } else {
+        mapLastClick = now;
       }
       return;
     }
