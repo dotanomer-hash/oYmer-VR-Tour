@@ -2147,7 +2147,14 @@ ${threeJsSrc}
               if (Math.abs(ay) > 0.2) {
                 const oldZoom = mapZoom;
                 mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.04));
-                if (Math.abs(mapZoom - oldZoom) > 0.001) mapNeedsRedraw = true;
+                if (Math.abs(mapZoom - oldZoom) > 0.001) {
+                  // Scale pan to keep the current view point anchored
+                  if (oldZoom > 1) {
+                    mapPanX = mapPanX * (mapZoom / oldZoom);
+                    mapPanY = mapPanY * (mapZoom / oldZoom);
+                  }
+                  mapNeedsRedraw = true;
+                }
               }
             }
           }
@@ -2156,8 +2163,8 @@ ${threeJsSrc}
             const pos = new THREE.Vector3();
             controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 15;
-              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 15;
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 7.5;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 7.5;
               if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 mapPanX += dx;
                 mapPanY += dy;
