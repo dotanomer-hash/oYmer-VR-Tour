@@ -1611,11 +1611,13 @@ ${threeJsSrc}
   controller1.addEventListener('squeeze', onGrip);
   controller2.addEventListener('squeeze', onGrip);
 
-  // Track trigger for pan mode (selectstart/selectend)
-  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) mapTriggerHeld = true; });
-  controller1.addEventListener('selectend', () => { mapTriggerHeld = false; });
-  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) mapTriggerHeld = true; });
-  controller2.addEventListener('selectend', () => { mapTriggerHeld = false; });
+  // Track trigger for pan mode
+  var mapTriggerHeld = false;
+  var mapDragStart = null;
+  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; } });
+  controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
+  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; } });
+  controller2.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
 
   function onVRSelect(event) {
     const controller = event.target;
@@ -1824,8 +1826,6 @@ ${threeJsSrc}
   let mapZoom = 1.0;
   let mapPanX = 0, mapPanY = 0;
   let mapNeedsRedraw = false;
-  let mapDragStart = null;
-  let mapTriggerHeld = false;
   let mapImageReady = false;
 
   // Update everything when floor plan image loads
@@ -2142,25 +2142,16 @@ ${threeJsSrc}
               }
             }
           }
-          // Trigger held + controller drag = pan the map
+          // Trigger held + move controller = drag/pan the map
           if (mapTriggerHeld) {
-            // Get controller world position projected onto the map plane
             const pos = new THREE.Vector3();
             controller1.getWorldPosition(pos);
             if (mapDragStart) {
-              // Convert world-space movement to canvas-space pan
-              // Project delta onto map's local axes
-              const right = new THREE.Vector3();
-              const up = new THREE.Vector3();
-              vrMinimapMesh.matrixWorld.extractBasis(right, up, new THREE.Vector3());
-              const delta = pos.clone().sub(mapDragStart);
-              const dx = delta.dot(right) * mapCanvasW * 0.5;
-              const dy = -delta.dot(up) * mapCanvasH * 0.5;
-              if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                mapPanX += dx;
-                mapPanY += dy;
-                mapNeedsRedraw = true;
-              }
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 0.3;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 0.3;
+              mapPanX += dx;
+              mapPanY += dy;
+              mapNeedsRedraw = true;
             }
             mapDragStart = pos.clone();
           } else {
