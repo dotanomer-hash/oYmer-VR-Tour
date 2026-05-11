@@ -212,6 +212,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   // Cache Three.js source for offline export
   let __THREE_SRC__ = '';
+  let exportFileHandle = null;
   (function cacheThreeJs() {
     const scriptEl = document.querySelector('script[src*="three"]');
     if (scriptEl && scriptEl.src) {
@@ -813,15 +814,26 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     const html = getViewerTemplate(tourData, threeJsSrc);
     const blob = new Blob([html], { type: 'text/html' });
 
+    // Reuse saved file handle so export goes to same location every time
+    if (exportFileHandle) {
+      try {
+        const writable = await exportFileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        alert('Exported to ' + exportFileHandle.name);
+        return;
+      } catch (e) { /* handle lost, fall through to picker */ }
+    }
     if (window.showSaveFilePicker) {
       try {
-        const handle = await window.showSaveFilePicker({
+        exportFileHandle = await window.showSaveFilePicker({
           suggestedName: 'vr-tour.html',
           types: [{ description: 'HTML Tour', accept: { 'text/html': ['.html'] } }]
         });
-        const writable = await handle.createWritable();
+        const writable = await exportFileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
+        alert('Exported to ' + exportFileHandle.name + '. Future exports will save here automatically.');
         return;
       } catch (e) {
         if (e.name === 'AbortError') return;
@@ -1474,6 +1486,19 @@ ${threeJsSrc}
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
     }
 
+    // Check minimap
+    if (vrMinimapMesh.visible) {
+      const mapHits = raycaster.intersectObject(vrMinimapMesh);
+      if (mapHits.length > 0) {
+        if (vrMinimapActive) {
+          handleVRMinimapClick(mapHits[0].uv);
+        } else {
+          activateVRMinimap();
+        }
+        return;
+      }
+    }
+
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
     if (hits.length > 0) {
       const hs = hits[0].object.userData;
@@ -1607,6 +1632,7 @@ ${threeJsSrc}
   vrMinimapMesh.renderOrder = 999;
   scene.add(vrMinimapMesh);
   vrMinimapMesh.visible = false;
+  let vrMinimapActive = false; // when true, minimap is enlarged and interactive
 
   function drawVRMinimap() {
     const ctx = vrMinimapCanvas.getContext('2d');
@@ -1694,7 +1720,50 @@ ${threeJsSrc}
     vrMinimapTex.needsUpdate = true;
   }
 
+  function activateVRMinimap() {
+    vrMinimapActive = true;
+    vrMinimapMesh.geometry.dispose();
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(3, 3);
+    vrMinimapMesh.material.opacity = 0.95;
+    // Position centered in front of viewer
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+    vrMinimapMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(3));
+    vrMinimapMesh.lookAt(camPos);
+  }
+
+  function deactivateVRMinimap() {
+    vrMinimapActive = false;
+    vrMinimapMesh.geometry.dispose();
+    vrMinimapMesh.geometry = new THREE.PlaneGeometry(1.2, 1.2);
+    vrMinimapMesh.material.opacity = 0.85;
+  }
+
+  function handleVRMinimapClick(uv) {
+    const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+    const mx = uv.x * W;
+    const my = (1 - uv.y) * H; // canvas Y is flipped vs UV
+    const pad = 60;
+    const positions = getScenePositions(W, H, pad);
+    for (const s of TOUR.scenes) {
+      const p = positions[s.id];
+      const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+      if (dist < 35) {
+        deactivateVRMinimap();
+        goToScene(s.id);
+        return true;
+      }
+    }
+    // Clicked minimap but not on a node — deactivate
+    deactivateVRMinimap();
+    return true;
+  }
+
   function updateVRMinimapPosition() {
+    if (vrMinimapActive) return; // don't move when active
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
     const camDir = new THREE.Vector3();
@@ -1702,10 +1771,8 @@ ${threeJsSrc}
     const camUp = new THREE.Vector3();
     xrCam.getWorldPosition(camPos);
     xrCam.getWorldDirection(camDir);
-    // Get camera right and up vectors
     camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
     camUp.crossVectors(camRight, camDir).normalize();
-    // Position: lower-left of view — forward 3m, left 1.1m, down 0.8m
     vrMinimapMesh.position.copy(camPos)
       .add(camDir.clone().multiplyScalar(3))
       .add(camRight.clone().multiplyScalar(-1.1))

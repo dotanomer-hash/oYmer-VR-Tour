@@ -212,6 +212,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   // Cache Three.js source for offline export
   let __THREE_SRC__ = '';
+  let exportFileHandle = null;
   (function cacheThreeJs() {
     const scriptEl = document.querySelector('script[src*="three"]');
     if (scriptEl && scriptEl.src) {
@@ -813,15 +814,26 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     const html = getViewerTemplate(tourData, threeJsSrc);
     const blob = new Blob([html], { type: 'text/html' });
 
+    // Reuse saved file handle so export goes to same location every time
+    if (exportFileHandle) {
+      try {
+        const writable = await exportFileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        alert('Exported to ' + exportFileHandle.name);
+        return;
+      } catch (e) { /* handle lost, fall through to picker */ }
+    }
     if (window.showSaveFilePicker) {
       try {
-        const handle = await window.showSaveFilePicker({
+        exportFileHandle = await window.showSaveFilePicker({
           suggestedName: 'vr-tour.html',
           types: [{ description: 'HTML Tour', accept: { 'text/html': ['.html'] } }]
         });
-        const writable = await handle.createWritable();
+        const writable = await exportFileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
+        alert('Exported to ' + exportFileHandle.name + '. Future exports will save here automatically.');
         return;
       } catch (e) {
         if (e.name === 'AbortError') return;
