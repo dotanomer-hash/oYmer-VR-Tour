@@ -1222,7 +1222,7 @@ ${threeJsSrc}
       if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(200, 140, 60, 0.7)';
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255, 160, 50, 0.6)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
       ctx.lineWidth = isCurrent ? 2 : 1;
@@ -1875,8 +1875,8 @@ ${threeJsSrc}
     ctx.save();
     if (activeMode && mapZoom > 1) {
       // Clamp pan so we don't scroll off the image
-      const maxPanX = (W * (mapZoom - 1)) / (2 * mapZoom);
-      const maxPanY = (H * (mapZoom - 1)) / (2 * mapZoom);
+      const maxPanX = (W * (mapZoom - 1)) / 2;
+      const maxPanY = (H * (mapZoom - 1)) / 2;
       mapPanX = Math.max(-maxPanX, Math.min(maxPanX, mapPanX));
       mapPanY = Math.max(-maxPanY, Math.min(maxPanY, mapPanY));
       // Zoom centered on canvas with pan offset
@@ -1953,7 +1953,7 @@ ${threeJsSrc}
       if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale * zoomScale; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(200, 140, 60, 0.8)';
+      ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255, 160, 50, 0.6)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
       ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale * zoomScale;
