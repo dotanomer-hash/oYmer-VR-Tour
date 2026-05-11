@@ -1463,11 +1463,18 @@ ${threeJsSrc}
     ]);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xff7a00, linewidth: 2, transparent: true, opacity: 0.6 });
     group.add(new THREE.Line(lineGeo, lineMat));
-    // Dot at the end of the ray
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, depthTest: false });
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8), dotMat);
+    // Dot at the end of the ray (bigger, with white core for clarity)
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.95, depthTest: false });
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.2, 20, 12), dotMat);
     dot.position.set(0, 0, -500);
     dot.name = 'rayDot';
+    dot.renderOrder = 1000;
+    const dotCore = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, 16, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false })
+    );
+    dotCore.renderOrder = 1001;
+    dot.add(dotCore);
     group.add(dot);
     return group;
   }
@@ -1496,23 +1503,32 @@ ${threeJsSrc}
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
     }
 
-    // Check minimap
-    if (vrMinimapMesh.visible) {
+    // If minimap is ACTIVE (enlarged), it takes priority
+    if (vrMinimapActive && vrMinimapMesh.visible) {
       const mapHits = raycaster.intersectObject(vrMinimapMesh);
       if (mapHits.length > 0) {
-        if (vrMinimapActive) {
-          handleVRMinimapClick(mapHits[0].uv);
-        } else {
-          activateVRMinimap();
-        }
+        handleVRMinimapClick(mapHits[0].uv);
         return;
       }
+      // Click outside active minimap deactivates it
+      deactivateVRMinimap();
+      return;
     }
 
+    // Check hotspots first so floating minimap doesn't block them
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
     if (hits.length > 0) {
       const hs = hits[0].object.userData;
       handleHotspotClick(hs);
+      return;
+    }
+
+    // No hotspot hit — check floating minimap (to activate it)
+    if (vrMinimapMesh.visible) {
+      const mapHits = raycaster.intersectObject(vrMinimapMesh);
+      if (mapHits.length > 0) {
+        activateVRMinimap();
+      }
     }
   }
 
@@ -1609,20 +1625,29 @@ ${threeJsSrc}
       gazeGroup.position.copy(target.position);
       gazeGroup.lookAt(camPos);
       gazeGroup.visible = true;
+      // Distance from camera to scale rings consistently
+      const dist = camPos.distanceTo(target.position);
+      const scale = Math.max(1, dist / 30); // tuned so rings look the same size at any distance
+      gazeGroup.scale.set(scale, scale, scale);
       if (gazeTarget === target) {
         gazeTimer += dt;
-        const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-        gazeRing.geometry.dispose();
-        gazeRing.geometry = new THREE.RingGeometry(3.5, 4.5, 32, 1, 0, pct * Math.PI * 2);
-        gazeInnerRing.geometry.dispose();
-        gazeInnerRing.geometry = new THREE.RingGeometry(2, 3, 32);
-        if (gazeTimer >= GAZE_DWELL) {
-          handleHotspotClick(target.userData);
-          gazeTarget = null;
-          gazeTimer = 0;
-          gazeGroup.visible = false;
-        }
-      } else { gazeTarget = target; gazeTimer = 0; }
+      } else {
+        gazeTarget = target;
+        gazeTimer = 0;
+      }
+      const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
+      // Always rebuild rings so they're visible from frame 1; show a minimum arc so progress is visible immediately
+      gazeRing.geometry.dispose();
+      const arc = Math.max(0.05, pct) * Math.PI * 2;
+      gazeRing.geometry = new THREE.RingGeometry(3.5, 4.5, 48, 1, -Math.PI / 2, arc);
+      gazeInnerRing.geometry.dispose();
+      gazeInnerRing.geometry = new THREE.RingGeometry(2, 3, 32);
+      if (gazeTimer >= GAZE_DWELL) {
+        handleHotspotClick(target.userData);
+        gazeTarget = null;
+        gazeTimer = 0;
+        gazeGroup.visible = false;
+      }
     } else {
       gazeTarget = null;
       gazeTimer = 0;
@@ -1828,10 +1853,13 @@ ${threeJsSrc}
         const hitWorld = hits[0].point;
         const local = ctrl.worldToLocal(hitWorld.clone());
         dot.position.copy(local);
-        dot.scale.set(1, 1, 1);
+        // Scale dot up with distance so it stays visually large
+        const dist = Math.max(1, Math.abs(local.z));
+        const s = Math.max(1, dist / 8);
+        dot.scale.set(s, s, s);
       } else {
         dot.position.set(0, 0, -500);
-        dot.scale.set(1, 1, 1);
+        dot.scale.set(60, 60, 60);
       }
     });
   }
