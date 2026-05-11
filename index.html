@@ -2291,11 +2291,14 @@ ${threeJsSrc}
     if (!file) return;
 
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      // Render PDF first page to image
+      // Render PDF first page to high-res image
       const arrayBuf = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
       const page = await pdf.getPage(1);
-      const scale = 2;
+      // Scale up for readable detail — target ~4000px on longest side
+      const baseViewport = page.getViewport({ scale: 1 });
+      const maxDim = Math.max(baseViewport.width, baseViewport.height);
+      const scale = Math.min(8, Math.max(3, 4000 / maxDim));
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
