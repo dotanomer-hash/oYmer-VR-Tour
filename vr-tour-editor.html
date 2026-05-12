@@ -1172,7 +1172,7 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 .hs-arrow-down { bottom: -16px; border-top: 12px solid #ff4466; animation: arrowBobDown 1s ease-in-out infinite; }
 @keyframes arrowBobUp { 0%,100% { top: -16px; opacity: 1; } 50% { top: -22px; opacity: 0.7; } }
 @keyframes arrowBobDown { 0%,100% { bottom: -16px; opacity: 1; } 50% { bottom: -22px; opacity: 0.7; } }
-.viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; outline-style: dashed; }
+.viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; outline: none; }
 .viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 8px rgba(255,122,0,0.4); } 50% { box-shadow: 0 0 20px rgba(255,122,0,0.6); } }
 
@@ -1195,12 +1195,15 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #minimap-container { position: fixed; bottom: 16px; left: 16px; z-index: 900; pointer-events: auto; }
 #minimap { border-radius: 10px; overflow: hidden; opacity: 0.75; transition: opacity 0.3s; cursor: pointer; display: block; }
 #minimap:hover { opacity: 0.95; }
-#minimap-container.enlarged { bottom: 0; left: 0; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); }
+#minimap-container.enlarged { bottom: 0; left: 0; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); position: fixed; }
 #minimap-container.enlarged #minimap { opacity: 1; border-radius: 16px; box-shadow: 0 0 40px rgba(255,122,0,0.4); }
+#minimap-inner { position: relative; display: inline-block; }
+#minimap-title { text-align: center; font-size: 11px; font-weight: 700; color: #ff7a00; padding: 4px 0; display: none; }
+#minimap-container.enlarged #minimap-title { display: block; font-size: 16px; padding: 8px 0; }
 .minimap-floor-btn { position: absolute; top: 50%; background: rgba(0,0,0,0.8); color: #ff7a00; border: 2px solid #ff7a00; border-radius: 8px; padding: 14px 10px; cursor: pointer; font-size: 24px; z-index: 901; transform: translateY(-50%); line-height: 1; display: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .minimap-floor-btn:hover, .minimap-floor-btn:active { background: #ff7a00; color: #fff; }
-#minimap-floor-prev { left: 12px; }
-#minimap-floor-next { right: 12px; }
+#minimap-floor-prev { left: -50px; }
+#minimap-floor-next { right: -50px; }
 #minimap-close { position: absolute; top: 16px; right: 16px; background: rgba(0,0,0,0.8); color: #fff; border: 2px solid #666; border-radius: 50%; width: 44px; height: 44px; font-size: 22px; cursor: pointer; display: none; z-index: 901; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 #minimap-close:hover, #minimap-close:active { background: #c00; border-color: #c00; }
 </style>
@@ -1227,9 +1230,12 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 
 <button id="vr-button">Enter VR</button>
 <div id="minimap-container">
-  <button class="minimap-floor-btn" id="minimap-floor-prev">◀</button>
-  <canvas id="minimap" width="220" height="166"></canvas>
-  <button class="minimap-floor-btn" id="minimap-floor-next">▶</button>
+  <div id="minimap-inner">
+    <div id="minimap-title"></div>
+    <button class="minimap-floor-btn" id="minimap-floor-prev">◀</button>
+    <canvas id="minimap" width="220" height="166"></canvas>
+    <button class="minimap-floor-btn" id="minimap-floor-next">▶</button>
+  </div>
   <button id="minimap-close">✕</button>
 </div>
 
@@ -1243,6 +1249,7 @@ ${threeJsSrc}
   let lon = 0, lat = 0;
   let pointerDown = false, pointerMoved = false;
   let startX = 0, startY = 0, lastX = 0, lastY = 0;
+  const texCache = {}; // cache panorama textures for faster scene switching
 
   // Three.js setup
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1651,20 +1658,16 @@ ${threeJsSrc}
       }
     });
 
-    // Header with floor name
+    // Header with floor name (DOM element above canvas)
     const viewFloor2 = flatMapViewFloorId ? (TOUR.floors || []).find(f => f.id === flatMapViewFloorId) : getCurrentFloor();
     const floorName = viewFloor2 ? viewFloor2.name : 'PLAN VIEW';
     const isOtherFloor = flatMapViewFloorId && flatMapViewFloorId !== getCurrentFloorId();
-    const flatHdrFontSize = Math.round(10 * scale);
-    ctx.font = 'bold ' + flatHdrFontSize + 'px sans-serif';
-    const flatHdrTw = ctx.measureText(floorName).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath();
-    ctx.roundRect(W / 2 - flatHdrTw / 2 - 6 * scale, 3 * scale, flatHdrTw + 12 * scale, flatHdrFontSize + 6 * scale, 4 * scale);
-    ctx.fill();
-    ctx.fillStyle = isOtherFloor ? 'rgba(100,200,255,0.95)' : 'rgba(255,122,0,0.95)';
-    ctx.textAlign = 'center';
-    ctx.fillText(floorName, W / 2, (3 + flatHdrFontSize) * scale);
+    const titleEl = document.getElementById('minimap-title');
+    if (titleEl) {
+      titleEl.textContent = floorName;
+      titleEl.style.color = isOtherFloor ? 'rgba(100,200,255,0.95)' : '#ff7a00';
+      titleEl.style.display = flatMinimapEnlarged ? 'block' : 'none';
+    }
 
   }
 
@@ -1776,7 +1779,8 @@ ${threeJsSrc}
     currentStereo = s.isStereo || false;
     currentFloorId = getCurrentFloorId();
 
-    const tex = new THREE.TextureLoader().load(s.imageData);
+    const tex = texCache[id] || new THREE.TextureLoader().load(s.imageData);
+    texCache[id] = tex;
     tex.colorSpace = THREE.SRGBColorSpace;
     if (s.isStereo) {
       tex.repeat.set(1, 0.5);
