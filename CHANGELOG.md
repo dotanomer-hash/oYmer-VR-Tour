@@ -17,6 +17,18 @@ git show v0.8-map-controls:vr-tour-editor.html > editor-v08.html
 
 ---
 
+## v1.0-hotspot-fix (2026-05-12) `b658bb4`
+**Hotspot clicks fixed + VR map floor switching via arrows**
+- Fixed critical bug: flat hotspot clicks not working (DOM elements destroyed every frame)
+  - Split `updateHotspots()` into `buildHotspots()` (once per scene) + `updateHotspots()` (position only)
+- VR map header: centered pill with `◀ Floor Name ▶` arrows, orange border, white text
+- Floor switching via clicking ◀▶ arrows on map header (removed thumbstick floor switching)
+  - `switchVRMapFloor(direction)` extracted as reusable function
+  - Map plane stays same size when switching floors (no geometry rebuild)
+- Thumbstick now only controls zoom (axes[2] = left/right)
+- Added export validation (`new Function()` syntax check) to prevent broken exports
+- Backup files: `vr-tour-editor-WORKING-BACKUP-2026-05-12b.html`
+
 ## v0.9-map-final (2026-05-11) `f763654`
 **Map navigation finalized - single click with jitter dead zone**
 - Single trigger click on scene node to navigate (no double-click or gaze)
