@@ -51,6 +51,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .hotspot-overlay.selected { border-color: #fff; box-shadow: 0 0 12px #ff7a00; }
 .hotspot-overlay.info { border-color: #5aaeff; background: rgba(90,174,255,0.3); }
 .hotspot-overlay.media { border-color: #4ecdc4; background: rgba(78,205,196,0.3); }
+.hotspot-overlay.audio { border-color: #e040fb; background: rgba(224,64,251,0.3); }
 .hotspot-overlay.floor-placement { border-style: dashed; transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); }
 .hotspot-overlay.floor-placement:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
 
@@ -69,6 +70,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .type-buttons button.active-nav { background: #ff7a00; border-color: #ff7a00; color: #fff; }
 .type-buttons button.active-info { background: #5aaeff; border-color: #5aaeff; color: #fff; }
 .type-buttons button.active-media { background: #4ecdc4; border-color: #4ecdc4; color: #fff; }
+.type-buttons button.active-audio { background: #e040fb; border-color: #e040fb; color: #fff; }
 .placement-buttons button.active-placement { background: #8855cc; border-color: #8855cc; color: #fff; }
 
 /* Icon picker */
@@ -151,6 +153,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         <button id="type-nav" data-type="nav">Nav</button>
         <button id="type-info" data-type="info">Info</button>
         <button id="type-media" data-type="media">Media</button>
+        <button id="type-audio" data-type="audio">🔊 Audio</button>
       </div>
 
       <label>Label</label>
@@ -189,6 +192,16 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       <div class="cond-field" id="field-link">
         <label>Link URL</label>
         <input type="text" id="hs-link-url" placeholder="https://...">
+      </div>
+
+      <div class="cond-field" id="field-audio">
+        <label>Audio File</label>
+        <input type="file" id="hs-audio-upload" accept="audio/*">
+        <div id="hs-audio-name" style="margin-top:4px;font-size:11px;color:#aaa;display:none"></div>
+        <button id="hs-audio-clear" style="display:none;margin-top:4px;background:#c00;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Remove Audio</button>
+        <label style="margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="hs-audio-autoplay"> Auto-play on scene enter
+        </label>
       </div>
 
       <button id="delete-hotspot">Delete Hotspot</button>
@@ -489,7 +502,9 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       infoBody: '',
       videoUrl: '',
       linkUrl: '',
-      imageData: null
+      imageData: null,
+      audioData: null,
+      audioAutoplay: false
     };
     scn.hotspots.push(hs);
     selectHotspot(hs.id);
@@ -521,10 +536,11 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       el.className = 'hotspot-overlay';
       if (hs.type === 'info') el.classList.add('info');
       if (hs.type === 'media') el.classList.add('media');
+      if (hs.type === 'audio') el.classList.add('audio');
       if (hs.placement === 'floor') el.classList.add('floor-placement');
       if (hs.id === state.selectedHotspotId) el.classList.add('selected');
       el.dataset.hotspotId = hs.id;
-      el.textContent = getHotspotIcon(hs, state.currentSceneId);
+      el.textContent = hs.type === 'audio' ? '🔊' : getHotspotIcon(hs, state.currentSceneId);
       el.style.left = x + 'px';
       el.style.top = y + 'px';
       viewportContainer.appendChild(el);
@@ -572,6 +588,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.getElementById('field-image').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
     document.getElementById('field-video').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
     document.getElementById('field-link').className = 'cond-field' + (hs.type === 'media' ? ' visible' : '');
+    document.getElementById('field-audio').className = 'cond-field' + (hs.type === 'audio' ? ' visible' : '');
 
     // Image preview
     const imgPreview = document.getElementById('hs-image-preview');
@@ -602,6 +619,20 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.getElementById('hs-info-body').value = hs.infoBody || '';
     document.getElementById('hs-video-url').value = hs.videoUrl || '';
     document.getElementById('hs-link-url').value = hs.linkUrl || '';
+
+    // Audio fields
+    const audioName = document.getElementById('hs-audio-name');
+    const audioClear = document.getElementById('hs-audio-clear');
+    if (hs.audioData) {
+      audioName.textContent = '🔊 Audio loaded';
+      audioName.style.display = 'block';
+      audioClear.style.display = 'inline-block';
+    } else {
+      audioName.style.display = 'none';
+      audioClear.style.display = 'none';
+    }
+    document.getElementById('hs-audio-upload').value = '';
+    document.getElementById('hs-audio-autoplay').checked = !!hs.audioAutoplay;
   }
 
   function setupPropsEvents() {
@@ -678,6 +709,27 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.getElementById('hs-image-clear').addEventListener('click', () => {
       const hs = getSelectedHotspot();
       if (hs) { hs.imageData = null; populateProps(hs); }
+    });
+
+    document.getElementById('hs-audio-upload').addEventListener('change', (e) => {
+      const hs = getSelectedHotspot();
+      if (!hs || !e.target.files[0]) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        hs.audioData = ev.target.result;
+        populateProps(hs);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+
+    document.getElementById('hs-audio-clear').addEventListener('click', () => {
+      const hs = getSelectedHotspot();
+      if (hs) { hs.audioData = null; populateProps(hs); }
+    });
+
+    document.getElementById('hs-audio-autoplay').addEventListener('change', (e) => {
+      const hs = getSelectedHotspot();
+      if (hs) hs.audioAutoplay = e.target.checked;
     });
 
     document.getElementById('delete-hotspot').addEventListener('click', () => {
@@ -929,7 +981,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         planY: s.planY,
         hotspots: s.hotspots.map(h => ({
           id: h.id, lon: h.lon, lat: h.lat, type: h.type, placement: h.placement || 'wall', label: h.label, icon: h.icon,
-          target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null
+          target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null,
+          audioData: h.audioData || null, audioAutoplay: h.audioAutoplay || false
         }))
       })),
       floors: state.floors.map(f => ({ id: f.id, name: f.name, level: f.level, floorPlanData: f.floorPlanData })),
@@ -1019,6 +1072,7 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 .viewer-hotspot.hs-nav { background: rgba(255,122,0,0.5); border: 2px solid #ff7a00; box-shadow: 0 0 12px rgba(255,122,0,0.6); }
 .viewer-hotspot.hs-info { background: rgba(90,174,255,0.5); border: 2px solid #5aaeff; box-shadow: 0 0 12px rgba(90,174,255,0.6); }
 .viewer-hotspot.hs-media { background: rgba(78,205,196,0.5); border: 2px solid #4ecdc4; box-shadow: 0 0 12px rgba(78,205,196,0.6); }
+.viewer-hotspot.hs-audio { background: rgba(224,64,251,0.5); border: 2px solid #e040fb; box-shadow: 0 0 12px rgba(224,64,251,0.6); }
 .hs-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
 .viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; }
 .viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.4); }
@@ -1099,7 +1153,8 @@ ${threeJsSrc}
   // 3D hotspot sprites for VR
   const vrHotspotGroup = new THREE.Group();
   scene.add(vrHotspotGroup);
-  const hsColorMap = { nav: 0xff7a00, info: 0x2196f3, media: 0x4caf50 };
+  const hsColorMap = { nav: 0xff7a00, info: 0x2196f3, media: 0x4caf50, audio: 0xe040fb };
+  let currentAudio = null; // currently playing Audio element
   const raycaster = new THREE.Raycaster();
   raycaster.far = 500;
   const tempMatrix = new THREE.Matrix4();
@@ -1154,10 +1209,11 @@ ${threeJsSrc}
       const color = hsColorMap[hs.type] || 0xff7a00;
       const hex = '#' + color.toString(16).padStart(6, '0');
       const floorDir = getHotspotIcon(hs, currentSceneId); // '👁', '👁⬆', or '👁⬇'
+      const iconDisplay = hs.type === 'audio' ? '🔊' : '👁';
       const hsMesh = new THREE.Mesh(
         new THREE.CircleGeometry(4, 32),
         new THREE.MeshBasicMaterial({
-          map: makeTextTexture('👁', hex),
+          map: makeTextTexture(iconDisplay, hex),
           transparent: true,
           opacity: 0.7,
           side: THREE.DoubleSide,
@@ -1521,6 +1577,11 @@ ${threeJsSrc}
     updateVRHotspots();
     drawMinimap();
     drawVRMinimap();
+
+    // Auto-play audio hotspots for this scene
+    stopAudio();
+    const autoAudio = s.hotspots.find(h => h.type === 'audio' && h.audioAutoplay && h.audioData);
+    if (autoAudio) playAudio(autoAudio.audioData);
   }
 
   function goToScene(id) {
@@ -1617,7 +1678,8 @@ ${threeJsSrc}
       let arrowHtml = '';
       if (dir === '👁⬆') arrowHtml = '<span style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#0f8">▲</span>';
       else if (dir === '👁⬇') arrowHtml = '<span style="position:absolute;bottom:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#f46">▼</span>';
-      el.innerHTML = '👁' + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
+      const mainIcon = hs.type === 'audio' ? '🔊' : '👁';
+      el.innerHTML = mainIcon + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
     });
@@ -1731,7 +1793,26 @@ ${threeJsSrc}
     vrPanelCloseMesh = null;
   }
 
+  function stopAudio() {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  }
+
+  function playAudio(audioData) {
+    stopAudio();
+    currentAudio = new Audio(audioData);
+    currentAudio.play().catch(() => {});
+    currentAudio.addEventListener('ended', () => { currentAudio = null; });
+  }
+
   function handleHotspotClick(hs) {
+    if (hs.type === 'audio' && hs.audioData) {
+      if (currentAudio && currentAudio.src === hs.audioData) {
+        stopAudio(); // toggle off if same audio
+      } else {
+        playAudio(hs.audioData);
+      }
+      return;
+    }
     if (hs.type === 'nav' && hs.target) {
       goToScene(parseInt(hs.target));
     } else if (hs.type === 'info') {
@@ -2902,7 +2983,7 @@ ${threeJsSrc}
         const hy = py + (r + 8) * Math.sin(a);
         fpCtx.beginPath();
         fpCtx.arc(hx, hy, 4, 0, Math.PI * 2);
-        fpCtx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : '#4ecdc4';
+        fpCtx.fillStyle = hs.type === 'nav' ? '#ff7a00' : hs.type === 'info' ? '#5aaeff' : hs.type === 'audio' ? '#e040fb' : '#4ecdc4';
         fpCtx.fill();
       });
 
