@@ -149,8 +149,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <!-- Right panel -->
   <div id="props-panel">
     <div class="panel-header">Hotspot Properties</div>
-    <button id="btn-add-hotspot" style="width:100%;padding:10px;font-size:14px;background:#ff7a00;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:8px">+ Add Hotspot</button>
     <div id="props-empty">
+      <button id="btn-add-hotspot" style="width:100%;padding:10px;font-size:14px;background:#ff7a00;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:8px">+ Add Hotspot</button>
       <small style="color:#888">Drag existing hotspots to move them.</small>
     </div>
     <div id="props-content">
@@ -497,14 +497,18 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
       if (pointerMoved) return; // was camera-panning, not a click
 
-      // Click on empty panorama = place new hotspot (only in placement mode)
+      // Click on empty panorama
       if (placingHotspot && state.currentSceneId) {
+        // Placement mode: place new hotspot
         const coords = screenToSphere(e.clientX, e.clientY);
         if (coords) {
           placeHotspot(coords.lon, coords.lat);
           placingHotspot = false;
           viewportContainer.classList.remove('placing-hotspot');
         }
+      } else {
+        // Not placing: deselect current hotspot (shows Add Hotspot button)
+        deselectHotspot();
       }
     });
   }
