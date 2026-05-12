@@ -47,15 +47,15 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 #empty-state p { font-size: 14px; }
 
 /* Hotspot overlays in editor */
-.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.8); background: rgba(255,122,0,0.4); transform: translate(-50%, -50%); cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; outline: 2px solid rgba(255,122,0,0.6); outline-offset: 4px; }
+.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ff7a00; background: rgba(255,122,0,0.3); transform: translate(-50%, -50%); cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; }
 .hotspot-overlay:active { cursor: grabbing; }
-.hotspot-overlay:hover { transform: translate(-50%, -50%) scale(1.3); filter: drop-shadow(0 0 8px rgba(255,122,0,0.7)); }
-.hotspot-overlay.selected { border-color: #fff; outline-color: #fff; box-shadow: 0 0 12px #ff7a00; filter: drop-shadow(0 0 10px #ff7a00); }
-.hotspot-overlay.info { background: rgba(90,174,255,0.4); outline-color: rgba(90,174,255,0.6); }
-.hotspot-overlay.media { background: rgba(78,205,196,0.4); outline-color: rgba(78,205,196,0.6); }
-.hotspot-overlay.audio { background: rgba(224,64,251,0.4); outline-color: rgba(224,64,251,0.6); }
+.hotspot-overlay:hover { transform: translate(-50%, -50%) scale(1.3); }
+.hotspot-overlay.selected { border-color: #fff; box-shadow: 0 0 12px #ff7a00; }
+.hotspot-overlay.info { border-color: #5aaeff; background: rgba(90,174,255,0.3); }
+.hotspot-overlay.media { border-color: #4ecdc4; background: rgba(78,205,196,0.3); }
+.hotspot-overlay.audio { border-color: #e040fb; background: rgba(224,64,251,0.3); }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
-.hotspot-overlay.floor-placement { border-style: dashed; outline-style: dashed; transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); }
+.hotspot-overlay.floor-placement { border-style: dashed; transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); }
 .hotspot-overlay.floor-placement:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
 
 /* Right panel - properties */
@@ -1146,22 +1146,17 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 .nav-item:hover { background: #1a1a4a; }
 .nav-item.active { border-left: 3px solid #ff7a00; background: #1a1a4a; }
 
-/* Hotspots — inner circle + outer ring (Kuula style) */
-.viewer-hotspot { position: absolute; width: 32px; height: 32px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; pointer-events: auto; animation: pulse 2s infinite; transition: transform 0.2s; outline-offset: 5px; outline-style: solid; outline-width: 2px; }
-.viewer-hotspot:hover { transform: translate(-50%, -50%) scale(1.3); }
-.viewer-hotspot.hs-nav { background: rgba(255,122,0,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(255,122,0,0.7); box-shadow: 0 0 12px rgba(255,122,0,0.5); }
-.viewer-hotspot.hs-info { background: rgba(90,174,255,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(90,174,255,0.7); box-shadow: 0 0 12px rgba(90,174,255,0.5); }
-.viewer-hotspot.hs-media { background: rgba(78,205,196,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(78,205,196,0.7); box-shadow: 0 0 12px rgba(78,205,196,0.5); }
-.viewer-hotspot.hs-audio { background: rgba(224,64,251,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(224,64,251,0.7); box-shadow: 0 0 14px rgba(224,64,251,0.5); font-size: 16px; }
-.hs-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
-.hs-arrow { position: absolute; left: 50%; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; transform: translateX(-50%); pointer-events: none; animation: arrowBob 1s ease-in-out infinite; }
-.hs-arrow-up { top: -16px; border-bottom: 12px solid #00ff88; animation-name: arrowBobUp; }
-.hs-arrow-down { bottom: -16px; border-top: 12px solid #ff4466; animation-name: arrowBobDown; }
-@keyframes arrowBobUp { 0%,100% { top: -16px; opacity: 1; } 50% { top: -22px; opacity: 0.7; } }
-@keyframes arrowBobDown { 0%,100% { bottom: -16px; opacity: 1; } 50% { bottom: -22px; opacity: 0.7; } }
-.viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; outline-style: dashed; }
-.viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 8px rgba(255,122,0,0.4); } 50% { box-shadow: 0 0 20px rgba(255,122,0,0.6); } }
+/* Hotspots */
+.viewer-hotspot { position: absolute; width: 36px; height: 36px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; pointer-events: auto; animation: pulse 2s infinite; transition: transform 0.2s; }
+.viewer-hotspot:hover { transform: translate(-50%, -50%) scale(1.4); }
+.viewer-hotspot.hs-nav { background: rgba(255,122,0,0.5); border: 2px solid #ff7a00; box-shadow: 0 0 12px rgba(255,122,0,0.6); }
+.viewer-hotspot.hs-info { background: rgba(90,174,255,0.5); border: 2px solid #5aaeff; box-shadow: 0 0 12px rgba(90,174,255,0.6); }
+.viewer-hotspot.hs-media { background: rgba(78,205,196,0.5); border: 2px solid #4ecdc4; box-shadow: 0 0 12px rgba(78,205,196,0.6); }
+.viewer-hotspot.hs-audio { background: rgba(224,64,251,0.5); border: 2px solid #e040fb; box-shadow: 0 0 12px rgba(224,64,251,0.6); }
+.hs-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; }
+.viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.4); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 8px currentColor; } 50% { box-shadow: 0 0 20px currentColor; } }
 
 /* Fade */
 #fade-overlay { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s; z-index: 800; }
@@ -1183,13 +1178,13 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #minimap { border-radius: 10px; overflow: hidden; opacity: 0.75; transition: opacity 0.3s; cursor: pointer; display: block; }
 #minimap:hover { opacity: 0.95; }
 #minimap-container.enlarged { bottom: 0; left: 0; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); }
-#minimap-container.enlarged #minimap { opacity: 1; border-radius: 16px; box-shadow: 0 0 40px rgba(255,122,0,0.4); }
-.minimap-floor-btn { position: absolute; top: 50%; background: rgba(0,0,0,0.8); color: #ff7a00; border: 2px solid #ff7a00; border-radius: 8px; padding: 14px 10px; cursor: pointer; font-size: 24px; z-index: 901; transform: translateY(-50%); line-height: 1; display: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-.minimap-floor-btn:hover, .minimap-floor-btn:active { background: #ff7a00; color: #fff; }
-#minimap-floor-prev { left: 12px; }
-#minimap-floor-next { right: 12px; }
-#minimap-close { position: absolute; top: 16px; right: 16px; background: rgba(0,0,0,0.8); color: #fff; border: 2px solid #666; border-radius: 50%; width: 44px; height: 44px; font-size: 22px; cursor: pointer; display: none; z-index: 901; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-#minimap-close:hover, #minimap-close:active { background: #c00; border-color: #c00; }
+#minimap-container.enlarged #minimap { width: 80vmin; height: 80vmin; opacity: 1; border-radius: 16px; box-shadow: 0 0 40px rgba(255,122,0,0.4); }
+.minimap-floor-btn { position: absolute; top: 50%; background: rgba(0,0,0,0.7); color: #ff7a00; border: 2px solid #ff7a00; border-radius: 6px; padding: 10px 6px; cursor: pointer; font-size: 20px; z-index: 901; transform: translateY(-50%); line-height: 1; display: none; }
+.minimap-floor-btn:hover { background: #ff7a00; color: #fff; }
+#minimap-floor-prev { left: 8px; }
+#minimap-floor-next { right: 8px; }
+#minimap-close { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #666; border-radius: 50%; width: 36px; height: 36px; font-size: 18px; cursor: pointer; display: none; z-index: 901; }
+#minimap-close:hover { background: #c00; }
 </style>
 </head>
 <body>
@@ -1215,7 +1210,7 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 <button id="vr-button">Enter VR</button>
 <div id="minimap-container">
   <button class="minimap-floor-btn" id="minimap-floor-prev">◀</button>
-  <canvas id="minimap" width="220" height="166"></canvas>
+  <canvas id="minimap" width="220" height="220"></canvas>
   <button class="minimap-floor-btn" id="minimap-floor-next">▶</button>
   <button id="minimap-close">✕</button>
 </div>
@@ -1263,40 +1258,18 @@ ${threeJsSrc}
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    const cx = 128, cy = 128;
-    const outerR = 120, innerR = 72, gap = 10;
-    // Outer ring
     ctx.beginPath();
-    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
-    ctx.arc(cx, cy, innerR + gap, 0, Math.PI * 2, true);
+    ctx.arc(128, 128, 120, 0, Math.PI * 2);
     ctx.fillStyle = bgColor;
-    ctx.globalAlpha = 0.45;
     ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 6;
     ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx, cy, innerR + gap, 0, Math.PI * 2);
-    ctx.stroke();
-    // Inner filled circle
-    ctx.beginPath();
-    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
-    ctx.fillStyle = bgColor;
-    ctx.globalAlpha = 0.7;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    // Icon
-    ctx.font = '64px sans-serif';
+    ctx.font = '80px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
-    ctx.fillText(text, cx, cy);
+    ctx.fillText(text, 128, 128);
     const tex = new THREE.CanvasTexture(canvas);
     return tex;
   }
@@ -1332,11 +1305,11 @@ ${threeJsSrc}
       const floorDir = getHotspotIcon(hs, currentSceneId); // '👁', '👁⬆', or '👁⬇'
       const iconDisplay = hs.type === 'audio' ? '🔊' : '👁';
       const hsMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(6, 32),
+        new THREE.CircleGeometry(4, 32),
         new THREE.MeshBasicMaterial({
           map: makeTextTexture(iconDisplay, hex),
           transparent: true,
-          opacity: 0.85,
+          opacity: 0.7,
           side: THREE.DoubleSide,
           depthTest: false
         })
@@ -1354,7 +1327,7 @@ ${threeJsSrc}
 
       // Add a ring around floor hotspots for visual distinction
       if (isFloor) {
-        const ringGeo = new THREE.RingGeometry(6.5, 8, 32);
+        const ringGeo = new THREE.RingGeometry(4.5, 6, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthTest: false });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
         ringMesh.position.copy(hsPos);
@@ -1388,7 +1361,7 @@ ${threeJsSrc}
 
       // Larger invisible hit area for easier gaze/laser targeting
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(20, 16),
+        new THREE.CircleGeometry(18, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
@@ -1472,42 +1445,14 @@ ${threeJsSrc}
   }
 
 
-  let flatMinimapEnlarged = false;
-
-  function getFloorAspect(img) {
-    if (img && img.naturalWidth && img.naturalHeight) return img.naturalHeight / img.naturalWidth;
-    return 0.754; // default landscape
-  }
-
-  function resizeMinimapCanvas(img) {
-    const cvs = document.getElementById('minimap');
-    if (!cvs) return;
-    const aspect = getFloorAspect(img);
-    if (flatMinimapEnlarged) {
-      // Enlarged: fill most of viewport
-      const maxW = Math.min(window.innerWidth * 0.85, 1200);
-      const maxH = window.innerHeight * 0.85;
-      let w = maxW;
-      let h = w * aspect;
-      if (h > maxH) { h = maxH; w = h / aspect; }
-      cvs.width = Math.round(w);
-      cvs.height = Math.round(h);
-    } else {
-      // Small: 220px wide
-      cvs.width = 220;
-      cvs.height = Math.round(220 * aspect);
-    }
-  }
-
   function loadFloorPlanImage() {
     const floor = getCurrentFloor();
     // Support both new multi-floor format and legacy single floorPlan
     const fpData = floor ? floor.floorPlanData : (TOUR.floorPlan || null);
-    if (!fpData) { minimapFloorImg = null; resizeMinimapCanvas(null); return; }
+    if (!fpData) { minimapFloorImg = null; return; }
     if (minimapFloorImg && minimapFloorImg._fpSrc === fpData) return; // already loaded
     minimapFloorImg = new Image();
     minimapFloorImg._fpSrc = fpData;
-    minimapFloorImg.onload = function() { resizeMinimapCanvas(this); drawMinimap(); };
     minimapFloorImg.src = fpData;
   }
 
@@ -1578,12 +1523,11 @@ ${threeJsSrc}
     const floorId = flatMapViewFloorId || getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
     if (!scenes.length) return;
-    const scale = Math.max(1, W / 220); // scale factor relative to small map
-    const pad = Math.round(25 * scale);
+    const pad = 25;
     const positions = getScenePositions(W, H, pad, floorId);
 
     // Connection lines
-    ctx.lineWidth = 1.5 * scale;
+    ctx.lineWidth = 1.5;
     scenes.forEach(s => {
       s.hotspots.forEach(hs => {
         if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
@@ -1603,15 +1547,15 @@ ${threeJsSrc}
       const p = positions[s.id];
       if (!p) return;
       const isCurrent = s.id === currentSceneId;
-      const r = (isCurrent ? 12 : 9) * scale;
+      const r = isCurrent ? 12 : 9;
 
-      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12 * scale; }
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255, 160, 50, 0.6)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = (isCurrent ? 2 : 1) * scale;
+      ctx.lineWidth = isCurrent ? 2 : 1;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -1620,45 +1564,33 @@ ${threeJsSrc}
       navHs.forEach((hs, hi) => {
         const a = (hi / navHs.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(p.x + (r + 6 * scale) * Math.cos(a), p.y + (r + 6 * scale) * Math.sin(a), 2.5 * scale, 0, Math.PI * 2);
+        ctx.arc(p.x + (r + 6) * Math.cos(a), p.y + (r + 6) * Math.sin(a), 2.5, 0, Math.PI * 2);
         ctx.fillStyle = '#ff7a00';
         ctx.fill();
       });
 
       // Short name inside circle (black text)
       ctx.fillStyle = isCurrent ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)';
-      ctx.font = 'bold ' + Math.round(Math.min(r, 8 * scale)) + 'px sans-serif';
+      ctx.font = 'bold ' + Math.min(r, 8) + 'px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(s.name.substring(0, 3), p.x, p.y);
       ctx.textBaseline = 'alphabetic';
-      // Full name label below node when enlarged
-      if (flatMinimapEnlarged) {
-        ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255,255,255,0.8)';
-        ctx.font = Math.round(11 * scale) + 'px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(s.name, p.x, p.y + r + 14 * scale);
-      }
     });
 
     // Header with floor name
     const viewFloor2 = flatMapViewFloorId ? (TOUR.floors || []).find(f => f.id === flatMapViewFloorId) : getCurrentFloor();
     const floorName = viewFloor2 ? viewFloor2.name : 'PLAN VIEW';
     const isOtherFloor = flatMapViewFloorId && flatMapViewFloorId !== getCurrentFloorId();
-    const flatHdrFontSize = Math.round(10 * scale);
-    ctx.font = 'bold ' + flatHdrFontSize + 'px sans-serif';
-    const flatHdrTw = ctx.measureText(floorName).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath();
-    ctx.roundRect(W / 2 - flatHdrTw / 2 - 6 * scale, 3 * scale, flatHdrTw + 12 * scale, flatHdrFontSize + 6 * scale, 4 * scale);
-    ctx.fill();
-    ctx.fillStyle = isOtherFloor ? 'rgba(100,200,255,0.95)' : 'rgba(255,122,0,0.95)';
+    ctx.fillStyle = isOtherFloor ? 'rgba(100,200,255,0.9)' : 'rgba(255,122,0,0.8)';
+    ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(floorName, W / 2, (3 + flatHdrFontSize) * scale);
+    ctx.fillText(floorName, W / 2, 14);
 
   }
 
   // Flat minimap: small = preview only, click to enlarge
+  let flatMinimapEnlarged = false;
   const minimapContainer = document.getElementById('minimap-container');
 
   function enlargeFlatMinimap() {
@@ -1670,7 +1602,6 @@ ${threeJsSrc}
       document.getElementById('minimap-floor-prev').style.display = 'block';
       document.getElementById('minimap-floor-next').style.display = 'block';
     }
-    resizeMinimapCanvas(minimapFloorImg);
     drawMinimap();
   }
 
@@ -1681,15 +1612,14 @@ ${threeJsSrc}
     document.getElementById('minimap-close').style.display = 'none';
     document.getElementById('minimap-floor-prev').style.display = 'none';
     document.getElementById('minimap-floor-next').style.display = 'none';
-    // Restore small canvas with proper aspect ratio
-    resizeMinimapCanvas(minimapFloorImg);
+    // Reload current floor's plan image
     loadFloorPlanImage();
     if (minimapFloorImg && minimapFloorImg.complete) drawMinimap();
-    else if (minimapFloorImg) minimapFloorImg.onload = function() { resizeMinimapCanvas(this); drawMinimap(); };
+    else if (minimapFloorImg) minimapFloorImg.onload = function() { drawMinimap(); };
     else drawMinimap();
   }
 
-  function handleMinimapInteraction(clientX, clientY) {
+  document.getElementById('minimap').addEventListener('click', (e) => {
     if (!flatMinimapEnlarged) {
       enlargeFlatMinimap();
       return;
@@ -1697,43 +1627,26 @@ ${threeJsSrc}
     // Enlarged: click scene to navigate
     const cvs = document.getElementById('minimap');
     const rect = cvs.getBoundingClientRect();
-    const mx = (clientX - rect.left) * (cvs.width / rect.width);
-    const my = (clientY - rect.top) * (cvs.height / rect.height);
+    const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
+    const my = (e.clientY - rect.top) * (cvs.height / rect.height);
     const fid = flatMapViewFloorId || getCurrentFloorId();
-    const pad = flatMinimapEnlarged ? 40 : 25;
-    const positions = getScenePositions(cvs.width, cvs.height, pad, fid);
+    const positions = getScenePositions(cvs.width, cvs.height, 25, fid);
     const floorScenes = getScenesForFloor(fid);
-    const hitRadius = flatMinimapEnlarged ? 30 : 18;
     for (const s of floorScenes) {
       const p = positions[s.id];
-      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < hitRadius) {
+      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
         goToScene(s.id);
         shrinkFlatMinimap();
         return;
       }
     }
-  }
-
-  document.getElementById('minimap').addEventListener('click', (e) => {
-    handleMinimapInteraction(e.clientX, e.clientY);
   });
-  // Touch support for Quest flat browser
-  document.getElementById('minimap').addEventListener('touchend', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const t = e.changedTouches[0];
-    if (t) handleMinimapInteraction(t.clientX, t.clientY);
-  }, { passive: false });
 
   // Close enlarged minimap
   document.getElementById('minimap-close').addEventListener('click', (e) => { e.stopPropagation(); shrinkFlatMinimap(); });
-  document.getElementById('minimap-close').addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); shrinkFlatMinimap(); }, { passive: false });
   minimapContainer.addEventListener('click', (e) => {
     if (flatMinimapEnlarged && e.target === minimapContainer) shrinkFlatMinimap();
   });
-  minimapContainer.addEventListener('touchend', (e) => {
-    if (flatMinimapEnlarged && e.target === minimapContainer) { e.preventDefault(); shrinkFlatMinimap(); }
-  }, { passive: false });
 
   // Floor switching arrows
   function switchFlatMapFloor(dir) {
@@ -1747,18 +1660,15 @@ ${threeJsSrc}
     const viewedFloor = sorted[newIdx];
     if (viewedFloor.floorPlanData) {
       minimapFloorImg = new Image();
-      minimapFloorImg.onload = function() { resizeMinimapCanvas(this); drawMinimap(); };
+      minimapFloorImg.onload = function() { drawMinimap(); };
       minimapFloorImg.src = viewedFloor.floorPlanData;
     } else {
       minimapFloorImg = null;
-      resizeMinimapCanvas(null);
     }
     drawMinimap();
   }
   document.getElementById('minimap-floor-prev').addEventListener('click', (e) => { e.stopPropagation(); switchFlatMapFloor(-1); });
   document.getElementById('minimap-floor-next').addEventListener('click', (e) => { e.stopPropagation(); switchFlatMapFloor(1); });
-  document.getElementById('minimap-floor-prev').addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); switchFlatMapFloor(-1); }, { passive: false });
-  document.getElementById('minimap-floor-next').addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); switchFlatMapFloor(1); }, { passive: false });
 
   function loadScene(id) {
     const s = TOUR.scenes.find(sc => sc.id === id);
@@ -1929,8 +1839,8 @@ ${threeJsSrc}
       el.style.pointerEvents = 'auto';
       const dir = getHotspotIcon(hs, currentSceneId);
       let arrowHtml = '';
-      if (dir === '👁⬆') arrowHtml = '<span class="hs-arrow hs-arrow-up"></span>';
-      else if (dir === '👁⬇') arrowHtml = '<span class="hs-arrow hs-arrow-down"></span>';
+      if (dir === '👁⬆') arrowHtml = '<span style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#0f8">▲</span>';
+      else if (dir === '👁⬇') arrowHtml = '<span style="position:absolute;bottom:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#f46">▼</span>';
       const mainIcon = hs.type === 'audio' ? '🔊' : '👁';
       el.innerHTML = mainIcon + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
@@ -2278,7 +2188,7 @@ ${threeJsSrc}
 
   // Gaze system — clockwise pie fill that looks like the hotspot itself filling in
   const gazeFillMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide, depthTest: false });
-  const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(6, 48, -Math.PI / 2, 0.01), gazeFillMat);
+  const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(4, 48, -Math.PI / 2, 0.01), gazeFillMat);
   gazeFillMesh.renderOrder = 998;
   gazeFillMesh.visible = false;
   scene.add(gazeFillMesh);
@@ -2365,10 +2275,10 @@ ${threeJsSrc}
         gazeFillMat.needsUpdate = true;
       }
       const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-      // Rebuild pie: clockwise sweep from top — fills both inner circle and outer ring
+      // Rebuild pie: clockwise sweep from top — reveals the hotspot image progressively
       gazeFillMesh.geometry.dispose();
       const arc = Math.max(0.05, pct) * Math.PI * 2;
-      gazeFillMesh.geometry = new THREE.CircleGeometry(6, 48, -Math.PI / 2, arc);
+      gazeFillMesh.geometry = new THREE.CircleGeometry(4, 48, -Math.PI / 2, arc);
       gazeFillMat.opacity = 1.0;
 
       if (gazeTimer >= GAZE_DWELL) {
@@ -2491,7 +2401,7 @@ ${threeJsSrc}
     const scenes = getScenesForFloor(floorId);
     if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
     const pad = Math.max(40, W * 0.04);
-    const positions = getScenePositions(W, H, pad, floorId);
+    const positions = getScenePositions(W, H, pad);
     const nodeScale = Math.max(1, W / 512) * 0.8; // scale markers for higher-res canvas
 
     // Scale down markers when zoomed in so they stay proportional
@@ -2582,36 +2492,22 @@ ${threeJsSrc}
     const viewFloor = (vrMinimapActive && mapViewFloorId) ? (TOUR.floors || []).find(f => f.id === mapViewFloorId) : getCurrentFloor();
     const headerFloorName = viewFloor ? viewFloor.name : 'PLAN VIEW';
     const hdrScale = Math.max(1, W / 512);
-    const hdrFontSize = Math.round(24 * hdrScale);
-    const hdrY = 16 + hdrFontSize;
+    const hdrFontSize = Math.round(22 * hdrScale);
     ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
     if (activeMode && TOUR.floors && TOUR.floors.length > 1) {
-      // Show arrows + floor name centered with background
+      // Show arrows + floor name centered
       const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
-      const hdrText = '◀  ' + headerFloorName + '  ▶';
-      const tw = ctx.measureText(hdrText).width;
-      // Background bar
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.beginPath();
-      ctx.roundRect(W / 2 - tw / 2 - 20, 10, tw + 40, hdrFontSize + 28, 10);
-      ctx.fill();
-      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.95)' : 'rgba(255,122,0,0.95)';
+      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.9)' : 'rgba(255,122,0,0.9)';
       ctx.textAlign = 'center';
-      ctx.fillText(hdrText, W / 2, hdrY);
+      ctx.fillText('◀  ' + headerFloorName + '  ▶', W / 2, 38);
       // Small hint
-      ctx.font = Math.round(14 * hdrScale) + 'px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillText('thumbstick ←→ switch floor  |  ↕ zoom  |  trigger drag = pan  |  grip = close', W / 2, hdrY + hdrFontSize + 4);
+      ctx.font = Math.round(13 * hdrScale) + 'px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('thumbstick ←→ switch floor', W / 2, 38 + hdrFontSize);
     } else {
-      // Single floor — show name with background
-      const tw = ctx.measureText(headerFloorName).width;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.beginPath();
-      ctx.roundRect(14, 10, tw + 20, hdrFontSize + 10, 8);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,122,0,0.95)';
+      ctx.fillStyle = 'rgba(255,122,0,0.9)';
       ctx.textAlign = 'left';
-      ctx.fillText(headerFloorName, 24, hdrY);
+      ctx.fillText(headerFloorName, 24, 38);
     }
 
     // Zoom indicator when active and zoomed
@@ -2694,9 +2590,9 @@ ${threeJsSrc}
       mx = (mx - W / 2 - mapPanX) / mapZoom + W / 2;
       my = (my - H / 2 - mapPanY) / mapZoom + H / 2;
     }
-    const clickFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
     const pad = Math.max(40, W * 0.04);
-    const positions = getScenePositions(W, H, pad, clickFloorId);
+    const positions = getScenePositions(W, H, pad);
+    const clickFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
     const floorScenes = getScenesForFloor(clickFloorId);
     let closest = null;
     let closestDist = Infinity;
@@ -2730,9 +2626,9 @@ ${threeJsSrc}
     camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
     camUp.crossVectors(camRight, camDir).normalize();
     vrMinimapMesh.position.copy(camPos)
-      .add(camDir.clone().multiplyScalar(2.8))
-      .add(camRight.clone().multiplyScalar(-1.5))
-      .add(camUp.clone().multiplyScalar(-1.0));
+      .add(camDir.clone().multiplyScalar(3))
+      .add(camRight.clone().multiplyScalar(-1.1))
+      .add(camUp.clone().multiplyScalar(-0.8));
     vrMinimapMesh.lookAt(camPos);
   }
 
@@ -2906,11 +2802,11 @@ ${threeJsSrc}
                 hmx = (hmx - mW / 2 - mapPanX) / mapZoom + mW / 2;
                 hmy = (hmy - mH / 2 - mapPanY) / mapZoom + mH / 2;
               }
-              const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
               const hpad = Math.max(40, mW * 0.04);
-              const hpos = getScenePositions(mW, mH, hpad, hoverFloorId);
+              const hpos = getScenePositions(mW, mH, hpad);
               const hNodeScale = Math.max(1, mW / 512) * 0.8;
               const hHitR = 40 * hNodeScale;
+              const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
               for (const sc of getScenesForFloor(hoverFloorId)) {
                 const hp = hpos[sc.id];
                 if (hp && Math.sqrt((hmx - hp.x) ** 2 + (hmy - hp.y) ** 2) < hHitR) {
