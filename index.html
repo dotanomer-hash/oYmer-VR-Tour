@@ -2736,18 +2736,8 @@ ${threeJsSrc}
       mapImageReady = false;
       minimapFloorImg = new Image();
       minimapFloorImg.onload = function() {
-        mapAspect = this.naturalHeight / this.naturalWidth;
-        mapCanvasW = Math.min(this.naturalWidth, 4096);
-        mapCanvasH = Math.round(mapCanvasW * mapAspect);
-        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-        vrMinimapCanvas.width = mapCanvasW;
-        vrMinimapCanvas.height = mapCanvasH;
         mapImageReady = true;
-        let bigW2, bigH2;
-        if (mapAspect < 1) { bigW2 = 7; bigH2 = bigW2 * mapAspect; }
-        else { bigH2 = 7; bigW2 = bigH2 / mapAspect; }
-        vrMinimapMesh.geometry.dispose();
-        vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW2, bigH2);
+        // Keep same plane size — don't rebuild geometry, just redraw canvas
         drawVRMinimap();
       };
       minimapFloorImg.src = viewedFloor.floorPlanData;
