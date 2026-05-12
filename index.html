@@ -1876,9 +1876,9 @@ ${threeJsSrc}
 
     // Check hotspots first so floating minimap doesn't block them
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
-    if (hits.length > 0) {
-      const hs = hits[0].object.userData;
-      handleHotspotClick(hs);
+    const hsHit = hits.find(h => h.object.userData && h.object.userData.type);
+    if (hsHit) {
+      handleHotspotClick(hsHit.object.userData);
       return;
     }
 
@@ -1966,7 +1966,8 @@ ${threeJsSrc}
     }
 
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
-    let hitTarget = hits.length > 0 ? hits[0].object : null;
+    const hsHit = hits.find(h => h.object.userData && h.object.userData.type);
+    let hitTarget = hsHit ? hsHit.object : null;
 
     // Grace period: keep target alive briefly when ray wanders off
     if (!hitTarget && gazeTarget && gazeGrace < GAZE_GRACE) {
