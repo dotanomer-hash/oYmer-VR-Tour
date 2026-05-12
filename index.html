@@ -1472,6 +1472,8 @@ ${threeJsSrc}
   }
 
 
+  let flatMinimapEnlarged = false;
+
   function getFloorAspect(img) {
     if (img && img.naturalWidth && img.naturalHeight) return img.naturalHeight / img.naturalWidth;
     return 0.754; // default landscape
@@ -1657,7 +1659,6 @@ ${threeJsSrc}
   }
 
   // Flat minimap: small = preview only, click to enlarge
-  let flatMinimapEnlarged = false;
   const minimapContainer = document.getElementById('minimap-container');
 
   function enlargeFlatMinimap() {
