@@ -72,10 +72,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .placement-buttons button.active-placement { background: #8855cc; border-color: #8855cc; color: #fff; }
 
 /* Icon picker */
-.icon-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.icon-picker span { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; font-size: 16px; border: 1px solid transparent; }
-.icon-picker span:hover { border-color: #ff7a00; }
-.icon-picker span.selected { border-color: #ff7a00; background: #1a1a4a; }
 
 /* Conditional fields */
 .cond-field { display: none; }
@@ -165,9 +161,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         <button id="place-wall" data-placement="wall">🧱 Wall</button>
         <button id="place-floor" data-placement="floor">⬇ Floor</button>
       </div>
-
-      <label>Icon</label>
-      <div class="icon-picker" id="icon-picker"></div>
 
       <div class="cond-field" id="field-target">
         <label>Target Scene</label>
@@ -266,7 +259,17 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     nextFloorId: 2
   };
 
-  const ICONS = ['👁','⬆️','⬇️'];
+  // Auto-determine hotspot icon based on target floor vs current floor
+  function getHotspotIcon(hs, currentSceneId) {
+    if (hs.type !== 'nav' || !hs.target) return '👁';
+    const currentScene = state.scenes.find(s => s.id === currentSceneId);
+    const targetScene = state.scenes.find(s => s.id === parseInt(hs.target));
+    if (!currentScene || !targetScene) return '👁';
+    const currentFloor = state.floors.find(f => f.id === currentScene.floorId);
+    const targetFloor = state.floors.find(f => f.id === targetScene.floorId);
+    if (!currentFloor || !targetFloor || currentFloor.id === targetFloor.id) return '👁';
+    return targetFloor.level > currentFloor.level ? '👁⬆' : '👁⬇';
+  }
 
   // === DOM refs ===
   const sceneListEl = document.getElementById('scene-list');
@@ -521,7 +524,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       if (hs.placement === 'floor') el.classList.add('floor-placement');
       if (hs.id === state.selectedHotspotId) el.classList.add('selected');
       el.dataset.hotspotId = hs.id;
-      el.textContent = hs.icon;
+      el.textContent = getHotspotIcon(hs, state.currentSceneId);
       el.style.left = x + 'px';
       el.style.top = y + 'px';
       viewportContainer.appendChild(el);
@@ -561,17 +564,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     if (activePlacement) activePlacement.className = 'active-placement';
 
     document.getElementById('hs-label').value = hs.label;
-
-    // Icon picker
-    const picker = document.getElementById('icon-picker');
-    picker.innerHTML = '';
-    ICONS.forEach(icon => {
-      const sp = document.createElement('span');
-      sp.textContent = icon;
-      if (icon === hs.icon) sp.className = 'selected';
-      sp.onclick = () => { hs.icon = icon; populateProps(hs); };
-      picker.appendChild(sp);
-    });
 
     // Conditional fields
     document.getElementById('field-target').className = 'cond-field' + (hs.type === 'nav' ? ' visible' : '');
@@ -1133,6 +1125,18 @@ ${threeJsSrc}
     return tex;
   }
 
+  // Auto-determine hotspot icon based on target floor vs current floor
+  function getHotspotIcon(hs, sceneId) {
+    if (hs.type !== 'nav' || !hs.target) return '👁';
+    const curScene = TOUR.scenes.find(s => s.id === sceneId);
+    const tgtScene = TOUR.scenes.find(s => s.id === parseInt(hs.target));
+    if (!curScene || !tgtScene) return '👁';
+    const curFloor = TOUR.floors.find(f => f.id === curScene.floorId);
+    const tgtFloor = TOUR.floors.find(f => f.id === tgtScene.floorId);
+    if (!curFloor || !tgtFloor || curFloor.id === tgtFloor.id) return '👁';
+    return tgtFloor.level > curFloor.level ? '👁⬆' : '👁⬇';
+  }
+
   function updateVRHotspots() {
     while (vrHotspotGroup.children.length) {
       const c = vrHotspotGroup.children[0];
@@ -1149,7 +1153,7 @@ ${threeJsSrc}
 
       const color = hsColorMap[hs.type] || 0xff7a00;
       const hex = '#' + color.toString(16).padStart(6, '0');
-      const iconChar = hs.icon || (hs.type === 'nav' ? '>' : hs.type === 'info' ? 'i' : '*');
+      const iconChar = getHotspotIcon(hs, currentSceneId);
       const hsMesh = new THREE.Mesh(
         new THREE.CircleGeometry(4, 32),
         new THREE.MeshBasicMaterial({
@@ -1590,7 +1594,7 @@ ${threeJsSrc}
       el.style.left = sx + 'px';
       el.style.top = sy + 'px';
       el.style.pointerEvents = 'auto';
-      el.innerHTML = hs.icon + '<span class="hs-label">' + (hs.label||'') + '</span>';
+      el.innerHTML = getHotspotIcon(hs, currentSceneId) + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
     });
