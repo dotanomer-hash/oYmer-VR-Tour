@@ -2617,40 +2617,29 @@ ${threeJsSrc}
     const viewFloor = (vrMinimapActive && mapViewFloorId) ? (TOUR.floors || []).find(f => f.id === mapViewFloorId) : getCurrentFloor();
     const headerFloorName = viewFloor ? viewFloor.name : 'PLAN VIEW';
     const hdrScale = Math.max(1, W / 512);
+    const hdrFontSize = Math.round(24 * hdrScale);
+    const hdrY = 16 + hdrFontSize;
+    ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
     if (activeMode && TOUR.floors && TOUR.floors.length > 1) {
-      const hdrFontSize = Math.round(36 * hdrScale);
+      // Show arrows + floor name centered
       const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
-      // Full-width header bar
-      const barH = hdrFontSize * 2.4;
+      const hdrText = '\\u25C0  ' + headerFloorName + '  \\u25B6';
+      const tw = ctx.measureText(hdrText).width;
       ctx.fillStyle = 'rgba(0,0,0,0.85)';
-      ctx.fillRect(0, 0, W, barH);
-      // Bottom border
-      ctx.fillStyle = '#ff7a00';
-      ctx.fillRect(0, barH - 4, W, 4);
-      // Left arrow
-      const arrowFontSize = Math.round(48 * hdrScale);
-      ctx.font = 'bold ' + arrowFontSize + 'px sans-serif';
-      ctx.fillStyle = '#ff7a00';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('\\u25C0', 30, barH / 2);
-      // Right arrow
-      ctx.textAlign = 'right';
-      ctx.fillText('\\u25B6', W - 30, barH / 2);
-      // Floor name centered
-      ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
-      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,1)' : '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - tw / 2 - 24, 8, tw + 48, hdrFontSize + 32, 12);
+      ctx.fill();
+      ctx.strokeStyle = '#ff7a00';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.95)' : '#ffffff';
       ctx.textAlign = 'center';
-      ctx.fillText(headerFloorName, W / 2, barH / 2);
-      // Hint line
-      ctx.font = Math.round(16 * hdrScale) + 'px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillText('thumbstick \\u2195 switch floor  |  \\u2194 zoom  |  trigger drag = pan  |  grip = close', W / 2, barH - 14);
-      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(hdrText, W / 2, hdrY);
+      // Small hint
+      ctx.font = Math.round(14 * hdrScale) + 'px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText('thumbstick \\u2195 switch floor  |  \\u2194 zoom  |  trigger drag = pan  |  grip = close', W / 2, hdrY + hdrFontSize + 4);
     } else {
-      const hdrFontSize = Math.round(24 * hdrScale);
-      const hdrY = 16 + hdrFontSize;
-      ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
       const tw = ctx.measureText(headerFloorName).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.beginPath();
@@ -2663,13 +2652,12 @@ ${threeJsSrc}
 
     // Zoom indicator when active and zoomed
     if (activeMode && mapZoom !== 1) {
-      const zoomFontSize = Math.round(22 * hdrScale);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(W - 220 * hdrScale, H - 50 * hdrScale, 210 * hdrScale, 44 * hdrScale);
+      ctx.fillRect(W - 180, 10, 170, 36);
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold ' + zoomFontSize + 'px sans-serif';
+      ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText('Zoom: ' + mapZoom.toFixed(1) + 'x', W - 20, H - 20 * hdrScale);
+      ctx.fillText('Zoom: ' + mapZoom.toFixed(1) + 'x', W - 20, 34);
     }
 
     vrMinimapTex.needsUpdate = true;
