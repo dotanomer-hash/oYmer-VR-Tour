@@ -1149,19 +1149,19 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 /* Hotspots — inner circle + outer ring (Kuula style) */
 .viewer-hotspot { position: absolute; width: 32px; height: 32px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; pointer-events: auto; animation: pulse 2s infinite; transition: transform 0.2s; outline-offset: 5px; outline-style: solid; outline-width: 2px; }
 .viewer-hotspot:hover { transform: translate(-50%, -50%) scale(1.3); }
-.viewer-hotspot.hs-nav { background: rgba(255,122,0,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(255,122,0,0.7); box-shadow: 0 0 12px rgba(255,122,0,0.5), inset 0 0 8px rgba(255,122,0,0.3); }
-.viewer-hotspot.hs-info { background: rgba(90,174,255,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(90,174,255,0.7); box-shadow: 0 0 12px rgba(90,174,255,0.5), inset 0 0 8px rgba(90,174,255,0.3); }
-.viewer-hotspot.hs-media { background: rgba(78,205,196,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(78,205,196,0.7); box-shadow: 0 0 12px rgba(78,205,196,0.5), inset 0 0 8px rgba(78,205,196,0.3); }
-.viewer-hotspot.hs-audio { background: rgba(224,64,251,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(224,64,251,0.7); box-shadow: 0 0 14px rgba(224,64,251,0.5), inset 0 0 8px rgba(224,64,251,0.3); font-size: 16px; }
+.viewer-hotspot.hs-nav { background: rgba(255,122,0,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(255,122,0,0.7); box-shadow: 0 0 12px rgba(255,122,0,0.5); }
+.viewer-hotspot.hs-info { background: rgba(90,174,255,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(90,174,255,0.7); box-shadow: 0 0 12px rgba(90,174,255,0.5); }
+.viewer-hotspot.hs-media { background: rgba(78,205,196,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(78,205,196,0.7); box-shadow: 0 0 12px rgba(78,205,196,0.5); }
+.viewer-hotspot.hs-audio { background: rgba(224,64,251,0.55); border: 2px solid rgba(255,255,255,0.8); outline-color: rgba(224,64,251,0.7); box-shadow: 0 0 14px rgba(224,64,251,0.5); font-size: 16px; }
 .hs-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
 .hs-arrow { position: absolute; left: 50%; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; transform: translateX(-50%); pointer-events: none; animation: arrowBob 1s ease-in-out infinite; }
-.hs-arrow-up { top: -16px; border-bottom: 12px solid #00ff88; filter: drop-shadow(0 0 6px #00ff88) drop-shadow(0 0 12px #00ff88); animation-name: arrowBobUp; }
-.hs-arrow-down { bottom: -16px; border-top: 12px solid #ff4466; filter: drop-shadow(0 0 6px #ff4466) drop-shadow(0 0 12px #ff4466); animation-name: arrowBobDown; }
+.hs-arrow-up { top: -16px; border-bottom: 12px solid #00ff88; animation-name: arrowBobUp; }
+.hs-arrow-down { bottom: -16px; border-top: 12px solid #ff4466; animation-name: arrowBobDown; }
 @keyframes arrowBobUp { 0%,100% { top: -16px; opacity: 1; } 50% { top: -22px; opacity: 0.7; } }
 @keyframes arrowBobDown { 0%,100% { bottom: -16px; opacity: 1; } 50% { bottom: -22px; opacity: 0.7; } }
 .viewer-hotspot.hs-floor { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); border-style: dashed; outline-style: dashed; }
 .viewer-hotspot.hs-floor:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
-@keyframes pulse { 0%,100% { filter: drop-shadow(0 0 4px currentColor); } 50% { filter: drop-shadow(0 0 14px currentColor) drop-shadow(0 0 6px currentColor); } }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 8px rgba(255,122,0,0.4); } 50% { box-shadow: 0 0 20px rgba(255,122,0,0.6); } }
 
 /* Fade */
 #fade-overlay { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s; z-index: 800; }
