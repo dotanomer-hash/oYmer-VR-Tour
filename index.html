@@ -1219,39 +1219,6 @@ ${threeJsSrc}
     return TOUR.scenes.filter(s => (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) === floorId);
   }
 
-  // Find scenes on OTHER floors that are nav targets from current-floor scenes
-  function getCrossFloorTargets(currentFloorId) {
-    const currentScenes = getScenesForFloor(currentFloorId);
-    const targets = [];
-    const seen = new Set();
-    currentScenes.forEach(s => {
-      s.hotspots.forEach(hs => {
-        if (hs.type === 'nav' && hs.target) {
-          const targetId = parseInt(hs.target);
-          const targetScene = TOUR.scenes.find(sc => sc.id === targetId);
-          if (targetScene && (targetScene.floorId || 1) !== currentFloorId && !seen.has(targetId)) {
-            seen.add(targetId);
-            targets.push(targetScene);
-          }
-        }
-      });
-    });
-    return targets;
-  }
-
-  // Get positions for cross-floor ghost nodes (placed along bottom edge)
-  function getCrossFloorPositions(W, H, pad, crossFloorScenes) {
-    const positions = {};
-    if (!crossFloorScenes.length) return positions;
-    const y = H - pad * 0.6; // near bottom
-    const usable = W - pad * 2;
-    const spacing = Math.min(usable / (crossFloorScenes.length + 1), 120);
-    const startX = W / 2 - (crossFloorScenes.length - 1) * spacing / 2;
-    crossFloorScenes.forEach((s, i) => {
-      positions[s.id] = { x: startX + i * spacing, y: y, isGhost: true };
-    });
-    return positions;
-  }
 
   function loadFloorPlanImage() {
     const floor = getCurrentFloor();
@@ -1384,43 +1351,6 @@ ${threeJsSrc}
       ctx.fillText(s.name.length > 12 ? s.name.substring(0, 11) + '..' : s.name, p.x, p.y + r + 14);
     });
 
-    // Cross-floor ghost nodes
-    const crossFloorScenes = getCrossFloorTargets(floorId);
-    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
-    const currentFloorObj2 = (TOUR.floors || []).find(f => f.id === floorId);
-    const currentLevel2 = currentFloorObj2 ? (currentFloorObj2.level || 0) : 0;
-    crossFloorScenes.forEach(s => {
-      const p = ghostPositions[s.id];
-      if (!p) return;
-      const r = 7;
-      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
-      const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
-      const arrow = targetLevel > currentLevel2 ? '↑' : '↓';
-      // Dashed circle
-      ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = 'rgba(255, 160, 50, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 160, 50, 0.25)';
-      ctx.fill();
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Arrow inside circle
-      ctx.fillStyle = 'rgba(255, 160, 50, 0.8)';
-      ctx.font = 'bold 9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(arrow, p.x, p.y);
-      ctx.textBaseline = 'alphabetic';
-      // Floor label
-      const floorLabel = targetFloor ? targetFloor.name : '?';
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.font = '8px sans-serif';
-      ctx.fillText(s.name.length > 10 ? s.name.substring(0, 9) + '..' : s.name, p.x, p.y + r + 10);
-      ctx.fillText(arrow + ' ' + floorLabel, p.x, p.y + r + 20);
-    });
-
     // Header with floor name
     const floorName = getCurrentFloorName();
     ctx.fillStyle = 'rgba(255,122,0,0.8)';
@@ -1429,28 +1359,16 @@ ${threeJsSrc}
     ctx.fillText(floorName || 'PLAN VIEW', 8, 14);
   }
 
-  // Minimap click navigation (current floor + cross-floor ghost nodes)
+  // Minimap click navigation (current floor scenes only)
   document.getElementById('minimap').addEventListener('click', (e) => {
     const cvs = e.target;
     const rect = cvs.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
     const my = (e.clientY - rect.top) * (cvs.height / rect.height);
-    const pad = 25;
-    const positions = getScenePositions(cvs.width, cvs.height, pad);
-    const floorId = getCurrentFloorId();
-    const floorScenes = getScenesForFloor(floorId);
+    const positions = getScenePositions(cvs.width, cvs.height, 25);
+    const floorScenes = getScenesForFloor(getCurrentFloorId());
     for (const s of floorScenes) {
       const p = positions[s.id];
-      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
-        goToScene(s.id);
-        return;
-      }
-    }
-    // Check cross-floor ghost nodes
-    const crossFloorScenes = getCrossFloorTargets(floorId);
-    const ghostPositions = getCrossFloorPositions(cvs.width, cvs.height, pad, crossFloorScenes);
-    for (const s of crossFloorScenes) {
-      const p = ghostPositions[s.id];
       if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
         goToScene(s.id);
         return;
@@ -2223,61 +2141,6 @@ ${threeJsSrc}
 
     });
 
-    // Cross-floor ghost nodes (drawn inside zoom transform)
-    const crossFloorScenes = getCrossFloorTargets(floorId);
-    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
-    const currentFloorObj = (TOUR.floors || []).find(f => f.id === floorId);
-    const currentLevel = currentFloorObj ? (currentFloorObj.level || 0) : 0;
-    crossFloorScenes.forEach(s => {
-      const p = ghostPositions[s.id];
-      if (!p) return;
-      const r = 18 * nodeScale * zoomScale;
-      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
-      const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
-      const arrow = targetLevel > currentLevel ? '↑' : '↓';
-      // Dashed outline circle
-      ctx.setLineDash([6 * nodeScale * zoomScale, 4 * nodeScale * zoomScale]);
-      ctx.strokeStyle = 'rgba(255, 160, 50, 0.6)';
-      ctx.lineWidth = 2 * nodeScale * zoomScale;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 160, 50, 0.2)';
-      ctx.fill();
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Directional arrow icon (↑ or ↓)
-      ctx.fillStyle = 'rgba(255, 160, 50, 0.8)';
-      ctx.font = 'bold ' + Math.round(22 * nodeScale * zoomScale) + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(arrow, p.x, p.y);
-      ctx.textBaseline = 'alphabetic';
-      // Scene name + floor label
-      const floorLabel = targetFloor ? targetFloor.name : '?';
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.font = Math.round(18 * nodeScale * zoomScale) + 'px sans-serif';
-      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 22 * nodeScale * zoomScale);
-      ctx.fillStyle = 'rgba(255, 160, 50, 0.7)';
-      ctx.font = Math.round(14 * nodeScale * zoomScale) + 'px sans-serif';
-      ctx.fillText(arrow + ' ' + floorLabel, p.x, p.y + r + 38 * nodeScale * zoomScale);
-      // Dashed line from current scene to ghost if current scene has a hotspot targeting it
-      const currentScene = TOUR.scenes.find(sc => sc.id === currentSceneId);
-      if (currentScene && positions[currentSceneId]) {
-        const hasLink = currentScene.hotspots.some(hs => hs.type === 'nav' && parseInt(hs.target) === s.id);
-        if (hasLink) {
-          const from = positions[currentSceneId];
-          ctx.setLineDash([8 * nodeScale * zoomScale, 6 * nodeScale * zoomScale]);
-          ctx.strokeStyle = 'rgba(255, 160, 50, 0.4)';
-          ctx.lineWidth = 2 * nodeScale * zoomScale;
-          ctx.beginPath();
-          ctx.moveTo(from.x, from.y);
-          ctx.lineTo(p.x, p.y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      }
-    });
-
     ctx.restore(); // undo zoom/pan transform
 
     // Header — always on top, not affected by zoom — show floor name
@@ -2359,25 +2222,13 @@ ${threeJsSrc}
       my = (my - H / 2 - mapPanY) / mapZoom + H / 2;
     }
     const pad = Math.max(40, W * 0.04);
-    const floorId = getCurrentFloorId();
     const positions = getScenePositions(W, H, pad);
-    const floorScenes = getScenesForFloor(floorId);
-    // Also get cross-floor ghost positions
-    const crossFloorScenes = getCrossFloorTargets(floorId);
-    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
+    const floorScenes = getScenesForFloor(getCurrentFloorId());
     let closest = null;
     let closestDist = Infinity;
-    // Check current-floor scenes
     for (const s of floorScenes) {
-      if (s.id === currentSceneId) continue; // skip current scene
+      if (s.id === currentSceneId) continue;
       const p = positions[s.id];
-      if (!p) continue;
-      const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
-      if (dist < closestDist) { closestDist = dist; closest = s; }
-    }
-    // Check cross-floor ghost nodes
-    for (const s of crossFloorScenes) {
-      const p = ghostPositions[s.id];
       if (!p) continue;
       const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
       if (dist < closestDist) { closestDist = dist; closest = s; }
@@ -2662,7 +2513,6 @@ ${threeJsSrc}
   const fileFloorplan = document.getElementById('file-floorplan');
   let fpImage = null;
   let fpDragging = null; // scene id being dragged
-  let fpDragMoved = false; // did user actually drag or just click?
 
   function getCurrentFloor() {
     return state.floors.find(f => f.id === state.currentFloorId) || state.floors[0];
@@ -2672,25 +2522,6 @@ ${threeJsSrc}
     return state.scenes.filter(s => s.floorId === state.currentFloorId);
   }
 
-  // Find scenes on OTHER floors that are nav targets from current-floor scenes (editor version)
-  function getEditorCrossFloorTargets() {
-    const currentScenes = getScenesForCurrentFloor();
-    const targets = [];
-    const seen = new Set();
-    currentScenes.forEach(s => {
-      s.hotspots.forEach(hs => {
-        if (hs.type === 'nav' && hs.target) {
-          const targetId = parseInt(hs.target);
-          const targetScene = state.scenes.find(sc => sc.id === targetId);
-          if (targetScene && targetScene.floorId !== state.currentFloorId && !seen.has(targetId)) {
-            seen.add(targetId);
-            targets.push(targetScene);
-          }
-        }
-      });
-    });
-    return targets;
-  }
 
   function renderFloorTabs() {
     const bar = document.getElementById('floor-tabs-bar');
@@ -2842,7 +2673,6 @@ ${threeJsSrc}
     fpCtx.clearRect(0, 0, cw, ch);
 
     let drawX = 0, drawY = 0, drawW = cw, drawH = ch;
-    const allScenes = state.scenes;
     const floorScenes = getScenesForCurrentFloor();
 
     if (fpImage) {
@@ -2871,98 +2701,41 @@ ${threeJsSrc}
 
     fpCanvas._drawArea = { x: drawX, y: drawY, w: drawW, h: drawH };
 
-    // Show unplaced scenes list (all scenes without a position)
-    const unplaced = allScenes.filter(s => s.planX == null);
+    // Show unplaced scenes for current floor
+    const unplaced = floorScenes.filter(s => s.planX == null);
     if (unplaced.length > 0) {
       fpCtx.fillStyle = 'rgba(0,0,0,0.7)';
-      fpCtx.fillRect(8, 8, 220, 20 + unplaced.length * 22);
+      fpCtx.fillRect(8, 8, 200, 20 + unplaced.length * 22);
       fpCtx.fillStyle = '#ff7a00';
       fpCtx.font = 'bold 12px sans-serif';
       fpCtx.textAlign = 'left';
       fpCtx.fillText('Click on plan to place:', 14, 24);
       unplaced.forEach((s, i) => {
-        const isOtherFloor = s.floorId !== state.currentFloorId;
-        fpCtx.fillStyle = isOtherFloor ? 'rgba(255,255,255,0.4)' : '#eee';
+        fpCtx.fillStyle = '#eee';
         fpCtx.font = '12px sans-serif';
-        const floorTag = isOtherFloor ? (' [' + (state.floors.find(f => f.id === s.floorId) || {}).name + ']') : '';
-        fpCtx.fillText('• ' + s.name + floorTag, 20, 42 + i * 22);
+        fpCtx.fillText('• ' + s.name, 20, 42 + i * 22);
       });
     }
 
-    // Draw connections (all scenes that have positions)
+    // Draw connections (current floor only)
     fpCtx.lineWidth = 2;
-    allScenes.forEach(s => {
+    floorScenes.forEach(s => {
       if (s.planX == null) return;
       s.hotspots.forEach(hs => {
         if (hs.type !== 'nav' || !hs.target) return;
-        const ts = allScenes.find(t => t.id === parseInt(hs.target));
+        const ts = floorScenes.find(t => t.id === parseInt(hs.target));
         if (!ts || ts.planX == null) return;
         const x1 = drawX + s.planX * drawW, y1 = drawY + s.planY * drawH;
         const x2 = drawX + ts.planX * drawW, y2 = drawY + ts.planY * drawH;
-        const bothOnFloor = s.floorId === state.currentFloorId && ts.floorId === state.currentFloorId;
-        const crossFloor = s.floorId !== ts.floorId;
-        if (crossFloor) {
-          fpCtx.setLineDash([5, 5]);
-          fpCtx.strokeStyle = 'rgba(255,160,50,0.3)';
-        } else if (bothOnFloor) {
-          fpCtx.setLineDash([]);
-          fpCtx.strokeStyle = 'rgba(255,122,0,0.5)';
-        } else {
-          fpCtx.setLineDash([]);
-          fpCtx.strokeStyle = 'rgba(255,255,255,0.15)';
-        }
+        fpCtx.strokeStyle = 'rgba(255,122,0,0.5)';
         fpCtx.beginPath();
         fpCtx.moveTo(x1, y1);
         fpCtx.lineTo(x2, y2);
         fpCtx.stroke();
-        fpCtx.setLineDash([]);
       });
     });
 
-    // Draw ALL scene markers — current floor solid, other floors dimmed
-    const currentFloorObj = state.floors.find(f => f.id === state.currentFloorId);
-    const currentLevel = currentFloorObj ? (currentFloorObj.level || 0) : 0;
-
-    // Draw other-floor scenes first (behind)
-    allScenes.filter(s => s.floorId !== state.currentFloorId).forEach(s => {
-      if (s.planX == null) return;
-      const px = drawX + s.planX * drawW;
-      const py = drawY + s.planY * drawH;
-      const r = 10;
-      const targetFloor = state.floors.find(f => f.id === s.floorId);
-      const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
-      const arrow = targetLevel > currentLevel ? '↑' : '↓';
-
-      // Dashed outline
-      fpCtx.setLineDash([4, 4]);
-      fpCtx.strokeStyle = 'rgba(255, 160, 50, 0.5)';
-      fpCtx.lineWidth = 2;
-      fpCtx.beginPath();
-      fpCtx.arc(px, py, r, 0, Math.PI * 2);
-      fpCtx.fillStyle = 'rgba(255, 160, 50, 0.15)';
-      fpCtx.fill();
-      fpCtx.stroke();
-      fpCtx.setLineDash([]);
-
-      // Arrow inside
-      fpCtx.fillStyle = 'rgba(255, 160, 50, 0.7)';
-      fpCtx.font = 'bold 12px sans-serif';
-      fpCtx.textAlign = 'center';
-      fpCtx.textBaseline = 'middle';
-      fpCtx.fillText(arrow, px, py);
-      fpCtx.textBaseline = 'alphabetic';
-
-      // Label with floor name
-      const floorLabel = targetFloor ? targetFloor.name : '?';
-      fpCtx.fillStyle = 'rgba(255,255,255,0.45)';
-      fpCtx.font = '11px sans-serif';
-      fpCtx.fillText(s.name, px, py + r + 14);
-      fpCtx.fillStyle = 'rgba(255,160,50,0.6)';
-      fpCtx.font = '9px sans-serif';
-      fpCtx.fillText(arrow + ' ' + floorLabel, px, py + r + 26);
-    });
-
-    // Draw current-floor scenes on top
+    // Draw scene markers (current floor only)
     floorScenes.forEach(s => {
       if (s.planX == null) return;
       const px = drawX + s.planX * drawW;
@@ -2999,30 +2772,29 @@ ${threeJsSrc}
     });
   }
 
-  // Drag scene markers on floor plan — all scenes draggable, click other-floor scene switches floor
+  // Drag scene markers on floor plan (current floor only)
   fpCanvas.addEventListener('mousedown', (e) => {
     if (!fpCanvas._drawArea) return;
     const rect = fpCanvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (fpCanvas.width / rect.width);
     const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
     const da = fpCanvas._drawArea;
+    const floorScenes = getScenesForCurrentFloor();
 
-    // Check ALL placed scenes for drag — any scene is draggable
-    for (const s of state.scenes) {
+    for (const s of floorScenes) {
       if (s.planX == null) continue;
       const px = da.x + s.planX * da.w;
       const py = da.y + s.planY * da.h;
       if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < 20) {
         fpDragging = s.id;
-        fpDragMoved = false; // track if actually dragged
         return;
       }
     }
-    // Click on empty area = place first unplaced scene (any floor)
+    // Click on empty area = place first unplaced scene on current floor
     const nx = (mx - da.x) / da.w;
     const ny = (my - da.y) / da.h;
     if (nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1) {
-      const unplaced = state.scenes.find(s => s.planX == null);
+      const unplaced = floorScenes.find(s => s.planX == null);
       if (unplaced) {
         unplaced.planX = nx;
         unplaced.planY = ny;
@@ -3039,28 +2811,13 @@ ${threeJsSrc}
     const da = fpCanvas._drawArea;
     const s = state.scenes.find(sc => sc.id === fpDragging);
     if (s) {
-      fpDragMoved = true;
       s.planX = Math.max(0, Math.min(1, (mx - da.x) / da.w));
       s.planY = Math.max(0, Math.min(1, (my - da.y) / da.h));
       drawFloorPlan();
     }
   });
 
-  document.addEventListener('mouseup', () => {
-    if (fpDragging && !fpDragMoved) {
-      // Click without drag on other-floor scene → switch to that floor
-      const s = state.scenes.find(sc => sc.id === fpDragging);
-      if (s && s.floorId !== state.currentFloorId) {
-        state.currentFloorId = s.floorId;
-        state.currentSceneId = s.id;
-        renderFloorTabs();
-        renderSceneList();
-        loadFloorPlanImage(() => { drawFloorPlan(); });
-      }
-    }
-    fpDragging = null;
-    fpDragMoved = false;
-  });
+  document.addEventListener('mouseup', () => { fpDragging = null; });
 
   // === Init ===
   if (typeof THREE === 'undefined') {
