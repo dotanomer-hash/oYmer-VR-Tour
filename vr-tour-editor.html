@@ -2662,6 +2662,7 @@ ${threeJsSrc}
   const fileFloorplan = document.getElementById('file-floorplan');
   let fpImage = null;
   let fpDragging = null; // scene id being dragged
+  let fpDragMoved = false; // did user actually drag or just click?
 
   function getCurrentFloor() {
     return state.floors.find(f => f.id === state.currentFloorId) || state.floors[0];
@@ -3006,23 +3007,14 @@ ${threeJsSrc}
     const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
     const da = fpCanvas._drawArea;
 
-    // Check ALL placed scenes for drag/click
+    // Check ALL placed scenes for drag — any scene is draggable
     for (const s of state.scenes) {
       if (s.planX == null) continue;
       const px = da.x + s.planX * da.w;
       const py = da.y + s.planY * da.h;
       if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < 20) {
-        if (s.floorId !== state.currentFloorId) {
-          // Clicked a scene on another floor — switch to that floor
-          state.currentFloorId = s.floorId;
-          state.currentSceneId = s.id;
-          renderFloorTabs();
-          renderSceneList();
-          loadFloorPlanImage(() => { drawFloorPlan(); });
-        } else {
-          // Same floor — start dragging
-          fpDragging = s.id;
-        }
+        fpDragging = s.id;
+        fpDragMoved = false; // track if actually dragged
         return;
       }
     }
@@ -3047,13 +3039,28 @@ ${threeJsSrc}
     const da = fpCanvas._drawArea;
     const s = state.scenes.find(sc => sc.id === fpDragging);
     if (s) {
+      fpDragMoved = true;
       s.planX = Math.max(0, Math.min(1, (mx - da.x) / da.w));
       s.planY = Math.max(0, Math.min(1, (my - da.y) / da.h));
       drawFloorPlan();
     }
   });
 
-  document.addEventListener('mouseup', () => { fpDragging = null; });
+  document.addEventListener('mouseup', () => {
+    if (fpDragging && !fpDragMoved) {
+      // Click without drag on other-floor scene → switch to that floor
+      const s = state.scenes.find(sc => sc.id === fpDragging);
+      if (s && s.floorId !== state.currentFloorId) {
+        state.currentFloorId = s.floorId;
+        state.currentSceneId = s.id;
+        renderFloorTabs();
+        renderSceneList();
+        loadFloorPlanImage(() => { drawFloorPlan(); });
+      }
+    }
+    fpDragging = null;
+    fpDragMoved = false;
+  });
 
   // === Init ===
   if (typeof THREE === 'undefined') {
