@@ -98,6 +98,21 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 #floorplan-body { flex: 1; position: relative; overflow: hidden; }
 #floorplan-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 #floorplan-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); color: #aaa; font-size: 12px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 4px; }
+
+/* Floor tabs in floor plan modal */
+#floor-tabs-bar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-bottom: 1px solid #333; background: #0f1b36; flex-wrap: wrap; }
+.floor-tab { padding: 5px 14px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 12px; color: #ccc; background: #1a1a4a; border: 1px solid #333; border-bottom: none; position: relative; user-select: none; }
+.floor-tab:hover { background: #2a2a5a; color: #fff; }
+.floor-tab.active { background: #ff7a00; color: #fff; border-color: #ff7a00; }
+.floor-tab .floor-tab-x { display: none; margin-left: 6px; font-size: 10px; color: rgba(255,255,255,0.6); cursor: pointer; }
+.floor-tab:hover .floor-tab-x { display: inline; }
+.floor-tab .floor-tab-x:hover { color: #fff; }
+#floor-tab-add { padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 14px; color: #ff7a00; background: transparent; border: 1px dashed #ff7a00; line-height: 1; }
+#floor-tab-add:hover { background: rgba(255,122,0,0.2); }
+
+/* Floor select in scene list */
+.scene-floor-select { width: 100%; background: #1a1a4a; border: 1px solid #333; color: #aaa; font-size: 10px; padding: 1px 2px; border-radius: 2px; margin-top: 2px; cursor: pointer; }
+.scene-floor-select:focus { border-color: #ff7a00; color: #eee; outline: none; }
 </style>
 </head>
 <body>
@@ -202,6 +217,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         <button id="fp-close">Close</button>
       </div>
     </div>
+    <div id="floor-tabs-bar"></div>
     <div id="floorplan-body">
       <canvas id="floorplan-canvas"></canvas>
       <div id="floorplan-hint">Drag scene markers to position them on the floor plan</div>
@@ -237,12 +253,14 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   // === State ===
   const state = {
-    scenes: [],        // [{id, name, imageData, planX, planY, hotspots: [{id, lon, lat, type, label, icon, target, infoTitle, infoBody, videoUrl, linkUrl}]}]
-    floorPlan: null,   // base64 image data for floor plan
+    scenes: [],        // [{id, name, imageData, planX, planY, floorId, hotspots: [{id, lon, lat, type, label, icon, target, infoTitle, infoBody, videoUrl, linkUrl}]}]
+    floors: [{id: 1, name: 'Ground Floor', level: 0, floorPlanData: null}],
     currentSceneId: null,
     selectedHotspotId: null,
+    currentFloorId: 1,
     nextSceneId: 1,
-    nextHotspotId: 1
+    nextHotspotId: 1,
+    nextFloorId: 2
   };
 
   const ICONS = ['👁','🚪','⬆️','⬇️','🍽','☕','🎭','ℹ️','📷','🎬'];
@@ -635,6 +653,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       name: name || 'Scene ' + state.scenes.length + 1,
       imageData: imageData,
       isStereo: isStereo || false,
+      floorId: state.currentFloorId || (state.floors[0] && state.floors[0].id) || 1,
       planX: null,
       planY: null,
       hotspots: []
@@ -662,14 +681,41 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       div.draggable = true;
       div.dataset.sceneId = scn.id;
       div.dataset.sceneIdx = idx;
+      div.style.flexWrap = 'wrap';
 
       const img = document.createElement('img');
       img.src = scn.imageData;
       div.appendChild(img);
 
+      const textWrap = document.createElement('div');
+      textWrap.style.cssText = 'flex:1;min-width:0;';
       const span = document.createElement('span');
+      span.style.cssText = 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
       span.textContent = scn.name;
-      div.appendChild(span);
+      textWrap.appendChild(span);
+
+      // Floor dropdown
+      if (state.floors.length > 1) {
+        const floorSel = document.createElement('select');
+        floorSel.className = 'scene-floor-select';
+        state.floors.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = f.name;
+          if (scn.floorId === f.id) opt.selected = true;
+          floorSel.appendChild(opt);
+        });
+        floorSel.addEventListener('change', (e) => {
+          e.stopPropagation();
+          scn.floorId = parseInt(e.target.value);
+          // Reset plan position when moving to a different floor
+          scn.planX = null;
+          scn.planY = null;
+        });
+        floorSel.addEventListener('click', (e) => e.stopPropagation());
+        textWrap.appendChild(floorSel);
+      }
+      div.appendChild(textWrap);
 
       div.addEventListener('click', () => selectScene(scn.id));
       div.addEventListener('dblclick', () => inlineRenameScene(div, span, scn));
@@ -754,11 +800,12 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   // === Save / Load ===
   async function saveProject() {
     const data = {
-      version: 1,
+      version: 2,
       scenes: state.scenes,
-      floorPlan: state.floorPlan,
+      floors: state.floors,
       nextSceneId: state.nextSceneId,
-      nextHotspotId: state.nextHotspotId
+      nextHotspotId: state.nextHotspotId,
+      nextFloorId: state.nextFloorId
     };
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
 
@@ -789,9 +836,26 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     try {
       const data = JSON.parse(json);
       state.scenes = data.scenes || [];
-      state.floorPlan = data.floorPlan || null;
       state.nextSceneId = data.nextSceneId || 1;
       state.nextHotspotId = data.nextHotspotId || 1;
+
+      // Backward compatibility: old projects with single floorPlan and no floors
+      if (data.floors && data.floors.length > 0) {
+        state.floors = data.floors;
+        state.nextFloorId = data.nextFloorId || (Math.max(...data.floors.map(f => f.id)) + 1);
+      } else {
+        // Migrate from old single-floorPlan format
+        state.floors = [{id: 1, name: 'Ground Floor', level: 0, floorPlanData: data.floorPlan || null}];
+        state.nextFloorId = 2;
+      }
+
+      // Ensure every scene has a floorId
+      const firstFloorId = state.floors[0].id;
+      state.scenes.forEach(s => {
+        if (!s.floorId) s.floorId = firstFloorId;
+      });
+
+      state.currentFloorId = firstFloorId;
       state.currentSceneId = null;
       state.selectedHotspotId = null;
       deselectHotspot();
@@ -817,6 +881,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         name: s.name,
         imageData: s.imageData,
         isStereo: s.isStereo || false,
+        floorId: s.floorId || (state.floors[0] && state.floors[0].id) || 1,
         planX: s.planX,
         planY: s.planY,
         hotspots: s.hotspots.map(h => ({
@@ -824,7 +889,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
           target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null
         }))
       })),
-      floorPlan: state.floorPlan || null,
+      floors: state.floors.map(f => ({ id: f.id, name: f.name, level: f.level, floorPlanData: f.floorPlanData })),
       startSceneId: state.scenes[0].id
     };
 
@@ -1131,15 +1196,52 @@ ${threeJsSrc}
     });
   }
 
-  // Minimap HUD
+  // Minimap HUD — multi-floor support
   let minimapFloorImg = null;
-  if (TOUR.floorPlan) {
-    minimapFloorImg = new Image();
-    minimapFloorImg.src = TOUR.floorPlan;
+  let currentFloorId = null;
+
+  function getCurrentFloorId() {
+    const s = TOUR.scenes.find(sc => sc.id === currentSceneId);
+    return s ? (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) : (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1;
   }
 
+  function getCurrentFloor() {
+    const fid = getCurrentFloorId();
+    return (TOUR.floors || []).find(f => f.id === fid) || (TOUR.floors && TOUR.floors[0]) || null;
+  }
+
+  function getCurrentFloorName() {
+    const f = getCurrentFloor();
+    return f ? f.name : '';
+  }
+
+  function getScenesForFloor(floorId) {
+    return TOUR.scenes.filter(s => (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) === floorId);
+  }
+
+  function loadFloorPlanImage() {
+    const floor = getCurrentFloor();
+    // Support both new multi-floor format and legacy single floorPlan
+    const fpData = floor ? floor.floorPlanData : (TOUR.floorPlan || null);
+    if (!fpData) { minimapFloorImg = null; return; }
+    if (minimapFloorImg && minimapFloorImg._fpSrc === fpData) return; // already loaded
+    minimapFloorImg = new Image();
+    minimapFloorImg._fpSrc = fpData;
+    minimapFloorImg.src = fpData;
+  }
+
+  // Initial floor plan load
+  currentFloorId = getCurrentFloorId();
+  // Legacy support: if no floors array, create virtual one from old floorPlan
+  if (!TOUR.floors || TOUR.floors.length === 0) {
+    TOUR.floors = [{ id: 1, name: 'Ground Floor', level: 0, floorPlanData: TOUR.floorPlan || null }];
+    TOUR.scenes.forEach(s => { if (!s.floorId) s.floorId = 1; });
+  }
+  loadFloorPlanImage();
+
   function getScenePositions(W, H, pad) {
-    const scenes = TOUR.scenes;
+    const floorId = getCurrentFloorId();
+    const scenes = getScenesForFloor(floorId);
     const count = scenes.length;
     const positions = {};
     const hasFloor = scenes.some(s => s.planX !== null && s.planX !== undefined);
@@ -1155,7 +1257,7 @@ ${threeJsSrc}
     } else {
       if (count === 1) {
         positions[scenes[0].id] = { x: W / 2, y: H / 2 };
-      } else {
+      } else if (count > 1) {
         const usable = W - pad * 2;
         const cols = Math.ceil(Math.sqrt(count));
         const cellW = usable / Math.max(cols - 1, 1);
@@ -1192,7 +1294,8 @@ ${threeJsSrc}
       ctx.fill();
     }
 
-    const scenes = TOUR.scenes;
+    const floorId = getCurrentFloorId();
+    const scenes = getScenesForFloor(floorId);
     if (!scenes.length) return;
     const pad = 25;
     const positions = getScenePositions(W, H, pad);
@@ -1216,6 +1319,7 @@ ${threeJsSrc}
     // Scene nodes
     scenes.forEach(s => {
       const p = positions[s.id];
+      if (!p) return;
       const isCurrent = s.id === currentSceneId;
       const r = isCurrent ? 12 : 9;
 
@@ -1246,22 +1350,25 @@ ${threeJsSrc}
       ctx.fillText(s.name.length > 12 ? s.name.substring(0, 11) + '..' : s.name, p.x, p.y + r + 14);
     });
 
+    // Header with floor name
+    const floorName = getCurrentFloorName();
     ctx.fillStyle = 'rgba(255,122,0,0.8)';
     ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('PLAN VIEW', 8, 14);
+    ctx.fillText(floorName || 'PLAN VIEW', 8, 14);
   }
 
-  // Minimap click navigation
+  // Minimap click navigation (only scenes on current floor)
   document.getElementById('minimap').addEventListener('click', (e) => {
     const cvs = e.target;
     const rect = cvs.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
     const my = (e.clientY - rect.top) * (cvs.height / rect.height);
     const positions = getScenePositions(cvs.width, cvs.height, 25);
-    for (const s of TOUR.scenes) {
+    const floorScenes = getScenesForFloor(getCurrentFloorId());
+    for (const s of floorScenes) {
       const p = positions[s.id];
-      if (Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
+      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
         goToScene(s.id);
         return;
       }
@@ -1271,8 +1378,10 @@ ${threeJsSrc}
   function loadScene(id) {
     const s = TOUR.scenes.find(sc => sc.id === id);
     if (!s) return;
+    const oldFloorId = currentFloorId;
     currentSceneId = id;
     currentStereo = s.isStereo || false;
+    currentFloorId = getCurrentFloorId();
 
     const tex = new THREE.TextureLoader().load(s.imageData);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1282,6 +1391,53 @@ ${threeJsSrc}
     }
     mat.map = tex;
     mat.needsUpdate = true;
+
+    // If floor changed, reload the floor plan image
+    if (currentFloorId !== oldFloorId) {
+      loadFloorPlanImage();
+      if (minimapFloorImg && !minimapFloorImg.complete) {
+        minimapFloorImg.onload = function() {
+          // Update VR minimap canvas dimensions for new floor plan
+          mapAspect = this.naturalHeight / this.naturalWidth;
+          mapCanvasW = Math.min(this.naturalWidth, 4096);
+          mapCanvasH = Math.round(mapCanvasW * mapAspect);
+          if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+          vrMinimapCanvas.width = mapCanvasW;
+          vrMinimapCanvas.height = mapCanvasH;
+          const sz = getSmallPlaneSize();
+          if (!vrMinimapActive) {
+            vrMinimapMesh.geometry.dispose();
+            vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+          }
+          mapImageReady = true;
+          drawMinimap();
+          drawVRMinimap();
+          vrMinimapTex.needsUpdate = true;
+        };
+      } else {
+        // No image or already loaded — update canvas dimensions
+        if (minimapFloorImg && minimapFloorImg.naturalWidth) {
+          mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
+          mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
+          mapCanvasH = Math.round(mapCanvasW * mapAspect);
+          if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+          vrMinimapCanvas.width = mapCanvasW;
+          vrMinimapCanvas.height = mapCanvasH;
+        } else {
+          // Reset to default aspect when no floor plan
+          mapAspect = 0.754;
+          mapCanvasW = 2048;
+          mapCanvasH = Math.round(2048 * mapAspect);
+          vrMinimapCanvas.width = mapCanvasW;
+          vrMinimapCanvas.height = mapCanvasH;
+        }
+        const sz = getSmallPlaneSize();
+        if (!vrMinimapActive) {
+          vrMinimapMesh.geometry.dispose();
+          vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+        }
+      }
+    }
 
     buildNav();
     updateHotspots();
@@ -1859,6 +2015,7 @@ ${threeJsSrc}
       vrMinimapMesh.geometry.dispose();
       vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
       mapImageReady = true;
+      drawMinimap();
       drawVRMinimap();
       vrMinimapTex.needsUpdate = true;
     };
@@ -1911,7 +2068,8 @@ ${threeJsSrc}
     ctx.lineWidth = activeMode ? 6 : 3;
     ctx.stroke();
 
-    const scenes = TOUR.scenes;
+    const floorId = getCurrentFloorId();
+    const scenes = getScenesForFloor(floorId);
     if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
     const pad = Math.max(40, W * 0.04);
     const positions = getScenePositions(W, H, pad);
@@ -1939,6 +2097,7 @@ ${threeJsSrc}
     // Scene nodes
     scenes.forEach(s => {
       const p = positions[s.id];
+      if (!p) return;
       const isCurrent = s.id === currentSceneId;
       const r = (isCurrent ? 32 : 24) * nodeScale * zoomScale;
 
@@ -1983,11 +2142,12 @@ ${threeJsSrc}
 
     ctx.restore(); // undo zoom/pan transform
 
-    // Header — always on top, not affected by zoom
+    // Header — always on top, not affected by zoom — show floor name
+    const headerFloorName = getCurrentFloorName();
     ctx.fillStyle = 'rgba(255,122,0,0.9)';
     ctx.font = 'bold ' + Math.round(22 * Math.max(1, W / 512)) + 'px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('PLAN VIEW', 24, 38);
+    ctx.fillText(headerFloorName || 'PLAN VIEW', 24, 38);
 
     // Zoom indicator when active and zoomed
     if (activeMode && mapZoom !== 1) {
@@ -2062,11 +2222,13 @@ ${threeJsSrc}
     }
     const pad = Math.max(40, W * 0.04);
     const positions = getScenePositions(W, H, pad);
+    const floorScenes = getScenesForFloor(getCurrentFloorId());
     let closest = null;
     let closestDist = Infinity;
-    for (const s of TOUR.scenes) {
+    for (const s of floorScenes) {
       if (s.id === currentSceneId) continue; // skip current scene
       const p = positions[s.id];
+      if (!p) continue;
       const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
       if (dist < closestDist) { closestDist = dist; closest = s; }
     }
@@ -2351,24 +2513,107 @@ ${threeJsSrc}
   let fpImage = null;
   let fpDragging = null; // scene id being dragged
 
+  function getCurrentFloor() {
+    return state.floors.find(f => f.id === state.currentFloorId) || state.floors[0];
+  }
+
+  function getScenesForCurrentFloor() {
+    return state.scenes.filter(s => s.floorId === state.currentFloorId);
+  }
+
+  function renderFloorTabs() {
+    const bar = document.getElementById('floor-tabs-bar');
+    bar.innerHTML = '';
+    state.floors.forEach(f => {
+      const tab = document.createElement('div');
+      tab.className = 'floor-tab' + (f.id === state.currentFloorId ? ' active' : '');
+      tab.dataset.floorId = f.id;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = f.name;
+      tab.appendChild(nameSpan);
+
+      // Delete button (only if more than one floor)
+      if (state.floors.length > 1) {
+        const xBtn = document.createElement('span');
+        xBtn.className = 'floor-tab-x';
+        xBtn.textContent = '×';
+        xBtn.title = 'Delete floor';
+        xBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!confirm('Delete floor "' + f.name + '"? Its scenes will be moved to "' + state.floors[0].name + '".')) return;
+          const firstFloorId = state.floors[0].id === f.id ? state.floors[1].id : state.floors[0].id;
+          state.scenes.forEach(s => { if (s.floorId === f.id) { s.floorId = firstFloorId; s.planX = null; s.planY = null; } });
+          state.floors = state.floors.filter(fl => fl.id !== f.id);
+          if (state.currentFloorId === f.id) state.currentFloorId = firstFloorId;
+          renderFloorTabs();
+          loadFloorPlanImage(() => drawFloorPlan());
+          renderSceneList();
+        });
+        tab.appendChild(xBtn);
+      }
+
+      tab.addEventListener('click', () => {
+        state.currentFloorId = f.id;
+        renderFloorTabs();
+        loadFloorPlanImage(() => drawFloorPlan());
+      });
+
+      // Double-click to rename floor
+      tab.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        const newName = prompt('Rename floor:', f.name);
+        if (newName && newName.trim()) {
+          f.name = newName.trim();
+          renderFloorTabs();
+          renderSceneList();
+        }
+      });
+
+      bar.appendChild(tab);
+    });
+
+    // Add floor button
+    const addBtn = document.createElement('div');
+    addBtn.id = 'floor-tab-add';
+    addBtn.textContent = '+';
+    addBtn.title = 'Add new floor';
+    addBtn.addEventListener('click', () => {
+      const name = prompt('New floor name:', 'Floor ' + state.floors.length);
+      if (!name || !name.trim()) return;
+      const newFloor = { id: state.nextFloorId++, name: name.trim(), level: state.floors.length, floorPlanData: null };
+      state.floors.push(newFloor);
+      state.currentFloorId = newFloor.id;
+      renderFloorTabs();
+      fpImage = null;
+      drawFloorPlan();
+      renderSceneList();
+    });
+    bar.appendChild(addBtn);
+  }
+
   document.getElementById('btn-floorplan').addEventListener('click', () => {
     fpModal.classList.add('open');
+    renderFloorTabs();
     requestAnimationFrame(() => loadFloorPlanImage(() => drawFloorPlan()));
   });
   document.getElementById('fp-close').addEventListener('click', () => fpModal.classList.remove('open'));
   document.getElementById('fp-upload').addEventListener('click', () => fileFloorplan.click());
   document.getElementById('fp-remove').addEventListener('click', () => {
-    state.floorPlan = null;
+    const floor = getCurrentFloor();
+    if (floor) floor.floorPlanData = null;
     fpImage = null;
-    state.scenes.forEach(s => { s.planX = null; s.planY = null; });
+    getScenesForCurrentFloor().forEach(s => { s.planX = null; s.planY = null; });
     drawFloorPlan();
   });
 
   function setFloorPlanAndDraw(dataUrl) {
-    state.floorPlan = dataUrl;
+    const floor = getCurrentFloor();
+    if (floor) floor.floorPlanData = dataUrl;
     loadFloorPlanImage(() => {
-      const unplaced = state.scenes.filter(s => s.planX == null);
-      if (unplaced.length === state.scenes.length && unplaced.length > 0) {
+      const floorScenes = getScenesForCurrentFloor();
+      const unplaced = floorScenes.filter(s => s.planX == null);
+      if (unplaced.length === floorScenes.length && unplaced.length > 0) {
         const cols = Math.ceil(Math.sqrt(unplaced.length));
         unplaced.forEach((s, i) => {
           s.planX = ((i % cols) + 0.5) / cols;
@@ -2408,11 +2653,13 @@ ${threeJsSrc}
   });
 
   function loadFloorPlanImage(cb) {
-    if (!state.floorPlan) { fpImage = null; if (cb) cb(); return; }
-    if (fpImage && fpImage.src === state.floorPlan) { if (cb) cb(); return; }
+    const floor = getCurrentFloor();
+    const fpData = floor ? floor.floorPlanData : null;
+    if (!fpData) { fpImage = null; if (cb) cb(); return; }
+    if (fpImage && fpImage.src === fpData) { if (cb) cb(); return; }
     const img = new Image();
     img.onload = () => { fpImage = img; if (cb) cb(); };
-    img.src = state.floorPlan;
+    img.src = fpData;
   }
 
   function drawFloorPlan() {
@@ -2424,6 +2671,7 @@ ${threeJsSrc}
     fpCtx.clearRect(0, 0, cw, ch);
 
     let drawX = 0, drawY = 0, drawW = cw, drawH = ch;
+    const floorScenes = getScenesForCurrentFloor();
 
     if (fpImage) {
       const imgAspect = fpImage.width / fpImage.height;
@@ -2453,8 +2701,8 @@ ${threeJsSrc}
     // Store draw area for hit testing (full canvas when no image)
     fpCanvas._drawArea = { x: drawX, y: drawY, w: drawW, h: drawH };
 
-    // Show unplaced scenes list
-    const unplaced = state.scenes.filter(s => s.planX == null);
+    // Show unplaced scenes list (only for current floor)
+    const unplaced = floorScenes.filter(s => s.planX == null);
     if (unplaced.length > 0) {
       fpCtx.fillStyle = 'rgba(0,0,0,0.7)';
       fpCtx.fillRect(8, 8, 200, 20 + unplaced.length * 22);
@@ -2469,13 +2717,13 @@ ${threeJsSrc}
       });
     }
 
-    // Draw connections
+    // Draw connections (only scenes on current floor)
     fpCtx.lineWidth = 2;
-    state.scenes.forEach(s => {
+    floorScenes.forEach(s => {
       if (s.planX == null) return;
       s.hotspots.forEach(hs => {
         if (hs.type !== 'nav' || !hs.target) return;
-        const ts = state.scenes.find(t => t.id === parseInt(hs.target));
+        const ts = floorScenes.find(t => t.id === parseInt(hs.target));
         if (!ts || ts.planX == null) return;
         const x1 = drawX + s.planX * drawW, y1 = drawY + s.planY * drawH;
         const x2 = drawX + ts.planX * drawW, y2 = drawY + ts.planY * drawH;
@@ -2487,8 +2735,8 @@ ${threeJsSrc}
       });
     });
 
-    // Draw scene markers
-    state.scenes.forEach(s => {
+    // Draw scene markers (only scenes on current floor)
+    floorScenes.forEach(s => {
       if (s.planX == null) return;
       const px = drawX + s.planX * drawW;
       const py = drawY + s.planY * drawH;
@@ -2524,15 +2772,16 @@ ${threeJsSrc}
     });
   }
 
-  // Drag scene markers on floor plan
+  // Drag scene markers on floor plan (only scenes on current floor)
   fpCanvas.addEventListener('mousedown', (e) => {
     if (!fpCanvas._drawArea) return;
     const rect = fpCanvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (fpCanvas.width / rect.width);
     const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
     const da = fpCanvas._drawArea;
+    const floorScenes = getScenesForCurrentFloor();
 
-    for (const s of state.scenes) {
+    for (const s of floorScenes) {
       if (s.planX == null) continue;
       const px = da.x + s.planX * da.w;
       const py = da.y + s.planY * da.h;
@@ -2541,11 +2790,11 @@ ${threeJsSrc}
         return;
       }
     }
-    // Click on empty floor plan area = place unplaced scene or current scene
+    // Click on empty floor plan area = place unplaced scene on current floor
     const nx = (mx - da.x) / da.w;
     const ny = (my - da.y) / da.h;
     if (nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1) {
-      const unplaced = state.scenes.find(s => s.planX == null);
+      const unplaced = floorScenes.find(s => s.planX == null);
       if (unplaced) {
         unplaced.planX = nx;
         unplaced.planY = ny;
