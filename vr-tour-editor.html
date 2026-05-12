@@ -78,11 +78,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .cond-field { display: none; }
 .cond-field.visible { display: block; }
 
-/* Move & Delete buttons */
-#move-hotspot { margin-top: 16px; width: 100%; padding: 8px; background: #2980b9; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
-#move-hotspot:hover { background: #3498db; }
-#move-hotspot.active { background: #e67e22; }
-#delete-hotspot { margin-top: 6px; width: 100%; padding: 8px; background: #c0392b; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+/* Delete button */
+#delete-hotspot { margin-top: 16px; width: 100%; padding: 8px; background: #c0392b; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
 #delete-hotspot:hover { background: #e74c3c; }
 
 /* Scrollbar */
@@ -148,7 +145,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <!-- Right panel -->
   <div id="props-panel">
     <div class="panel-header">Hotspot Properties</div>
-    <div id="props-empty">Click a hotspot to edit, or click in the viewport to place one.</div>
+    <div id="props-empty">Click in viewport to place a hotspot.<br><small style="color:#888">Click a hotspot to select &amp; move it.<br>Click selected hotspot again to deselect.</small></div>
     <div id="props-content">
       <label>Type</label>
       <div class="type-buttons">
@@ -198,7 +195,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
         <input type="text" id="hs-link-url" placeholder="https://...">
       </div>
 
-      <button id="move-hotspot">Move Hotspot (click new location)</button>
       <button id="delete-hotspot">Delete Hotspot</button>
     </div>
   </div>
@@ -359,8 +355,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   }
 
   // === Pointer Handling (viewport) ===
-  let movingHotspot = false; // true when waiting for click to reposition selected hotspot
-
   function setupPointerEvents() {
     const el = viewportContainer;
 
@@ -398,7 +392,12 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       // Check if clicked on a hotspot overlay
       if (e.target.classList.contains('hotspot-overlay')) {
         const hsId = parseInt(e.target.dataset.hotspotId);
-        selectHotspot(hsId);
+        // Click selected hotspot again = deselect
+        if (hsId === state.selectedHotspotId) {
+          deselectHotspot();
+        } else {
+          selectHotspot(hsId);
+        }
         return;
       }
 
@@ -418,8 +417,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
           const hsLon = THREE.MathUtils.radToDeg(theta);
           const hsLat = 90 - THREE.MathUtils.radToDeg(phi);
 
-          // If in move mode, reposition selected hotspot. Otherwise place new.
-          if (movingHotspot && state.selectedHotspotId) {
+          // If a hotspot is selected, move it here. Otherwise place a new one.
+          if (state.selectedHotspotId) {
             const scn = getCurrentScene();
             if (scn) {
               const hs = scn.hotspots.find(h => h.id === state.selectedHotspotId);
@@ -429,9 +428,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
                 selectHotspot(hs.id);
               }
             }
-            movingHotspot = false;
-            document.getElementById('move-hotspot').classList.remove('active');
-            document.getElementById('move-hotspot').textContent = 'Move Hotspot (click new location)';
           } else {
             placeHotspot(hsLon, hsLat);
           }
@@ -515,9 +511,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
   function deselectHotspot() {
     state.selectedHotspotId = null;
-    movingHotspot = false;
-    const moveBtn = document.getElementById('move-hotspot');
-    if (moveBtn) { moveBtn.classList.remove('active'); moveBtn.textContent = 'Move Hotspot (click new location)'; }
     propsEmpty.style.display = 'block';
     propsContent.style.display = 'none';
   }
@@ -660,19 +653,6 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.getElementById('hs-image-clear').addEventListener('click', () => {
       const hs = getSelectedHotspot();
       if (hs) { hs.imageData = null; populateProps(hs); }
-    });
-
-    document.getElementById('move-hotspot').addEventListener('click', () => {
-      if (!state.selectedHotspotId) return;
-      movingHotspot = !movingHotspot;
-      const btn = document.getElementById('move-hotspot');
-      if (movingHotspot) {
-        btn.classList.add('active');
-        btn.textContent = 'Click on panorama to place...';
-      } else {
-        btn.classList.remove('active');
-        btn.textContent = 'Move Hotspot (click new location)';
-      }
     });
 
     document.getElementById('delete-hotspot').addEventListener('click', () => {
