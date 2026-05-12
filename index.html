@@ -1219,6 +1219,40 @@ ${threeJsSrc}
     return TOUR.scenes.filter(s => (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) === floorId);
   }
 
+  // Find scenes on OTHER floors that are nav targets from current-floor scenes
+  function getCrossFloorTargets(currentFloorId) {
+    const currentScenes = getScenesForFloor(currentFloorId);
+    const targets = [];
+    const seen = new Set();
+    currentScenes.forEach(s => {
+      s.hotspots.forEach(hs => {
+        if (hs.type === 'nav' && hs.target) {
+          const targetId = parseInt(hs.target);
+          const targetScene = TOUR.scenes.find(sc => sc.id === targetId);
+          if (targetScene && (targetScene.floorId || 1) !== currentFloorId && !seen.has(targetId)) {
+            seen.add(targetId);
+            targets.push(targetScene);
+          }
+        }
+      });
+    });
+    return targets;
+  }
+
+  // Get positions for cross-floor ghost nodes (placed along bottom edge)
+  function getCrossFloorPositions(W, H, pad, crossFloorScenes) {
+    const positions = {};
+    if (!crossFloorScenes.length) return positions;
+    const y = H - pad * 0.6; // near bottom
+    const usable = W - pad * 2;
+    const spacing = Math.min(usable / (crossFloorScenes.length + 1), 120);
+    const startX = W / 2 - (crossFloorScenes.length - 1) * spacing / 2;
+    crossFloorScenes.forEach((s, i) => {
+      positions[s.id] = { x: startX + i * spacing, y: y, isGhost: true };
+    });
+    return positions;
+  }
+
   function loadFloorPlanImage() {
     const floor = getCurrentFloor();
     // Support both new multi-floor format and legacy single floorPlan
@@ -1350,6 +1384,33 @@ ${threeJsSrc}
       ctx.fillText(s.name.length > 12 ? s.name.substring(0, 11) + '..' : s.name, p.x, p.y + r + 14);
     });
 
+    // Cross-floor ghost nodes
+    const crossFloorScenes = getCrossFloorTargets(floorId);
+    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
+    crossFloorScenes.forEach(s => {
+      const p = ghostPositions[s.id];
+      if (!p) return;
+      const r = 7;
+      // Dashed circle
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(255, 160, 50, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 160, 50, 0.25)';
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Floor label
+      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
+      const floorLabel = targetFloor ? targetFloor.name : '?';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.name.length > 10 ? s.name.substring(0, 9) + '..' : s.name, p.x, p.y + r + 10);
+      ctx.fillText('↕ ' + floorLabel, p.x, p.y + r + 20);
+    });
+
     // Header with floor name
     const floorName = getCurrentFloorName();
     ctx.fillStyle = 'rgba(255,122,0,0.8)';
@@ -1358,16 +1419,28 @@ ${threeJsSrc}
     ctx.fillText(floorName || 'PLAN VIEW', 8, 14);
   }
 
-  // Minimap click navigation (only scenes on current floor)
+  // Minimap click navigation (current floor + cross-floor ghost nodes)
   document.getElementById('minimap').addEventListener('click', (e) => {
     const cvs = e.target;
     const rect = cvs.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
     const my = (e.clientY - rect.top) * (cvs.height / rect.height);
-    const positions = getScenePositions(cvs.width, cvs.height, 25);
-    const floorScenes = getScenesForFloor(getCurrentFloorId());
+    const pad = 25;
+    const positions = getScenePositions(cvs.width, cvs.height, pad);
+    const floorId = getCurrentFloorId();
+    const floorScenes = getScenesForFloor(floorId);
     for (const s of floorScenes) {
       const p = positions[s.id];
+      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
+        goToScene(s.id);
+        return;
+      }
+    }
+    // Check cross-floor ghost nodes
+    const crossFloorScenes = getCrossFloorTargets(floorId);
+    const ghostPositions = getCrossFloorPositions(cvs.width, cvs.height, pad, crossFloorScenes);
+    for (const s of crossFloorScenes) {
+      const p = ghostPositions[s.id];
       if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
         goToScene(s.id);
         return;
@@ -2140,6 +2213,57 @@ ${threeJsSrc}
 
     });
 
+    // Cross-floor ghost nodes (drawn inside zoom transform)
+    const crossFloorScenes = getCrossFloorTargets(floorId);
+    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
+    crossFloorScenes.forEach(s => {
+      const p = ghostPositions[s.id];
+      if (!p) return;
+      const r = 18 * nodeScale * zoomScale;
+      // Dashed outline circle
+      ctx.setLineDash([6 * nodeScale * zoomScale, 4 * nodeScale * zoomScale]);
+      ctx.strokeStyle = 'rgba(255, 160, 50, 0.6)';
+      ctx.lineWidth = 2 * nodeScale * zoomScale;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 160, 50, 0.2)';
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Up/down arrow icon
+      ctx.fillStyle = 'rgba(255, 160, 50, 0.8)';
+      ctx.font = 'bold ' + Math.round(20 * nodeScale * zoomScale) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('↕', p.x, p.y);
+      ctx.textBaseline = 'alphabetic';
+      // Scene name + floor label
+      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
+      const floorLabel = targetFloor ? targetFloor.name : '?';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.font = Math.round(18 * nodeScale * zoomScale) + 'px sans-serif';
+      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 22 * nodeScale * zoomScale);
+      ctx.fillStyle = 'rgba(255, 160, 50, 0.7)';
+      ctx.font = Math.round(14 * nodeScale * zoomScale) + 'px sans-serif';
+      ctx.fillText(floorLabel, p.x, p.y + r + 38 * nodeScale * zoomScale);
+      // Dashed line from current scene to ghost if current scene has a hotspot targeting it
+      const currentScene = TOUR.scenes.find(sc => sc.id === currentSceneId);
+      if (currentScene && positions[currentSceneId]) {
+        const hasLink = currentScene.hotspots.some(hs => hs.type === 'nav' && parseInt(hs.target) === s.id);
+        if (hasLink) {
+          const from = positions[currentSceneId];
+          ctx.setLineDash([8 * nodeScale * zoomScale, 6 * nodeScale * zoomScale]);
+          ctx.strokeStyle = 'rgba(255, 160, 50, 0.4)';
+          ctx.lineWidth = 2 * nodeScale * zoomScale;
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    });
+
     ctx.restore(); // undo zoom/pan transform
 
     // Header — always on top, not affected by zoom — show floor name
@@ -2221,13 +2345,25 @@ ${threeJsSrc}
       my = (my - H / 2 - mapPanY) / mapZoom + H / 2;
     }
     const pad = Math.max(40, W * 0.04);
+    const floorId = getCurrentFloorId();
     const positions = getScenePositions(W, H, pad);
-    const floorScenes = getScenesForFloor(getCurrentFloorId());
+    const floorScenes = getScenesForFloor(floorId);
+    // Also get cross-floor ghost positions
+    const crossFloorScenes = getCrossFloorTargets(floorId);
+    const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
     let closest = null;
     let closestDist = Infinity;
+    // Check current-floor scenes
     for (const s of floorScenes) {
       if (s.id === currentSceneId) continue; // skip current scene
       const p = positions[s.id];
+      if (!p) continue;
+      const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+      if (dist < closestDist) { closestDist = dist; closest = s; }
+    }
+    // Check cross-floor ghost nodes
+    for (const s of crossFloorScenes) {
+      const p = ghostPositions[s.id];
       if (!p) continue;
       const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
       if (dist < closestDist) { closestDist = dist; closest = s; }
