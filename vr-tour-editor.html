@@ -43,7 +43,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 #empty-state p { font-size: 14px; }
 
 /* Hotspot overlays in editor */
-.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ff7a00; background: rgba(255,122,0,0.3); transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; }
+.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ff7a00; background: rgba(255,122,0,0.3); transform: translate(-50%, -50%); cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; }
+.hotspot-overlay:active { cursor: grabbing; }
 .hotspot-overlay:hover { transform: translate(-50%, -50%) scale(1.3); }
 .hotspot-overlay.selected { border-color: #fff; box-shadow: 0 0 12px #ff7a00; }
 .hotspot-overlay.info { border-color: #5aaeff; background: rgba(90,174,255,0.3); }
@@ -145,7 +146,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <!-- Right panel -->
   <div id="props-panel">
     <div class="panel-header">Hotspot Properties</div>
-    <div id="props-empty">Click in viewport to place a hotspot.<br><small style="color:#888">Click a hotspot to select &amp; move it.<br>Click selected hotspot again to deselect.</small></div>
+    <div id="props-empty">Click in viewport to place a hotspot.<br><small style="color:#888">Drag a hotspot to move it.</small></div>
     <div id="props-content">
       <label>Type</label>
       <div class="type-buttons">
@@ -357,16 +358,24 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   // === Pointer Handling (viewport) ===
   function setupPointerEvents() {
     const el = viewportContainer;
+    let draggingHotspotId = null;
 
     el.addEventListener('mousedown', (e) => {
       if (e.target !== renderer.domElement && !e.target.classList.contains('hotspot-overlay')) return;
       e.preventDefault();
       pointerDown = true;
       pointerMoved = false;
+      draggingHotspotId = null;
       pointerStartX = e.clientX;
       pointerStartY = e.clientY;
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
+
+      // Mousedown on a hotspot = prepare to drag it
+      if (e.target.classList.contains('hotspot-overlay')) {
+        draggingHotspotId = parseInt(e.target.dataset.hotspotId);
+        selectHotspot(draggingHotspotId);
+      }
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -375,11 +384,35 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       const dy = e.clientY - pointerStartY;
       if (Math.abs(dx) > 5 || Math.abs(dy) > 5) pointerMoved = true;
 
-      const movX = e.clientX - lastPointerX;
-      const movY = e.clientY - lastPointerY;
-      lon -= movX * 0.3;
-      lat += movY * 0.3;
-      lat = Math.max(-85, Math.min(85, lat));
+      if (draggingHotspotId !== null && pointerMoved) {
+        // Dragging a hotspot — raycast to sphere for new position
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointerVec, camera);
+        const intersects = raycaster.intersectObject(sphere);
+        if (intersects.length > 0) {
+          const point = intersects[0].point;
+          const rr = point.length();
+          const phi = Math.acos(point.y / rr);
+          const theta = Math.atan2(point.x, point.z);
+          const scn = getCurrentScene();
+          if (scn) {
+            const hs = scn.hotspots.find(h => h.id === draggingHotspotId);
+            if (hs) {
+              hs.lon = THREE.MathUtils.radToDeg(theta);
+              hs.lat = 90 - THREE.MathUtils.radToDeg(phi);
+            }
+          }
+        }
+      } else if (draggingHotspotId === null) {
+        // Regular camera pan
+        const movX = e.clientX - lastPointerX;
+        const movY = e.clientY - lastPointerY;
+        lon -= movX * 0.3;
+        lat += movY * 0.3;
+        lat = Math.max(-85, Math.min(85, lat));
+      }
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
     });
@@ -387,50 +420,28 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.addEventListener('mouseup', (e) => {
       if (!pointerDown) return;
       pointerDown = false;
-      if (pointerMoved) return;
 
-      // Check if clicked on a hotspot overlay
-      if (e.target.classList.contains('hotspot-overlay')) {
-        const hsId = parseInt(e.target.dataset.hotspotId);
-        // Click selected hotspot again = deselect
-        if (hsId === state.selectedHotspotId) {
-          deselectHotspot();
-        } else {
-          selectHotspot(hsId);
-        }
+      if (draggingHotspotId !== null) {
+        // Was on a hotspot — if dragged, position already updated. If just clicked, it's already selected.
+        draggingHotspotId = null;
         return;
       }
 
-      // Raycast to sphere
-      if (e.target === renderer.domElement && state.currentSceneId) {
+      if (pointerMoved) return; // was panning camera
+
+      // Click on empty panorama = place new hotspot
+      if (state.currentSceneId) {
         const rect = renderer.domElement.getBoundingClientRect();
         pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
         raycaster.setFromCamera(pointerVec, camera);
         const intersects = raycaster.intersectObject(sphere);
         if (intersects.length > 0) {
           const point = intersects[0].point;
-          const r = point.length();
-          const phi = Math.acos(point.y / r);
+          const rr = point.length();
+          const phi = Math.acos(point.y / rr);
           const theta = Math.atan2(point.x, point.z);
-          const hsLon = THREE.MathUtils.radToDeg(theta);
-          const hsLat = 90 - THREE.MathUtils.radToDeg(phi);
-
-          // If a hotspot is selected, move it here. Otherwise place a new one.
-          if (state.selectedHotspotId) {
-            const scn = getCurrentScene();
-            if (scn) {
-              const hs = scn.hotspots.find(h => h.id === state.selectedHotspotId);
-              if (hs) {
-                hs.lon = hsLon;
-                hs.lat = hsLat;
-                selectHotspot(hs.id);
-              }
-            }
-          } else {
-            placeHotspot(hsLon, hsLat);
-          }
+          placeHotspot(THREE.MathUtils.radToDeg(theta), 90 - THREE.MathUtils.radToDeg(phi));
         }
       }
     });
