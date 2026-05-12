@@ -2671,6 +2671,26 @@ ${threeJsSrc}
     return state.scenes.filter(s => s.floorId === state.currentFloorId);
   }
 
+  // Find scenes on OTHER floors that are nav targets from current-floor scenes (editor version)
+  function getEditorCrossFloorTargets() {
+    const currentScenes = getScenesForCurrentFloor();
+    const targets = [];
+    const seen = new Set();
+    currentScenes.forEach(s => {
+      s.hotspots.forEach(hs => {
+        if (hs.type === 'nav' && hs.target) {
+          const targetId = parseInt(hs.target);
+          const targetScene = state.scenes.find(sc => sc.id === targetId);
+          if (targetScene && targetScene.floorId !== state.currentFloorId && !seen.has(targetId)) {
+            seen.add(targetId);
+            targets.push(targetScene);
+          }
+        }
+      });
+    });
+    return targets;
+  }
+
   function renderFloorTabs() {
     const bar = document.getElementById('floor-tabs-bar');
     bar.innerHTML = '';
@@ -2920,6 +2940,87 @@ ${threeJsSrc}
       fpCtx.textAlign = 'center';
       fpCtx.fillText(s.name, px, py + r + 16);
     });
+
+    // Cross-floor ghost nodes along the bottom
+    const crossFloorScenes = getEditorCrossFloorTargets();
+    if (crossFloorScenes.length > 0) {
+      const currentFloorObj = state.floors.find(f => f.id === state.currentFloorId);
+      const currentLevel = currentFloorObj ? (currentFloorObj.level || 0) : 0;
+      const ghostY = ch - 30;
+      const spacing = Math.min((cw - 40) / (crossFloorScenes.length + 1), 140);
+      const startX = cw / 2 - (crossFloorScenes.length - 1) * spacing / 2;
+
+      // Background strip
+      fpCtx.fillStyle = 'rgba(0,0,0,0.6)';
+      fpCtx.fillRect(0, ch - 60, cw, 60);
+      fpCtx.strokeStyle = 'rgba(255,160,50,0.3)';
+      fpCtx.lineWidth = 1;
+      fpCtx.beginPath();
+      fpCtx.moveTo(0, ch - 60);
+      fpCtx.lineTo(cw, ch - 60);
+      fpCtx.stroke();
+
+      // Store ghost positions for click handling
+      fpCanvas._ghostPositions = [];
+
+      crossFloorScenes.forEach((s, i) => {
+        const px = startX + i * spacing;
+        const py = ghostY;
+        const r = 10;
+        const targetFloor = state.floors.find(f => f.id === s.floorId);
+        const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
+        const arrow = targetLevel > currentLevel ? '↑' : '↓';
+
+        fpCanvas._ghostPositions.push({ id: s.id, x: px, y: py });
+
+        // Dashed connection from source scene to ghost
+        const sourceScene = floorScenes.find(src =>
+          src.planX != null && src.hotspots.some(hs => hs.type === 'nav' && parseInt(hs.target) === s.id)
+        );
+        if (sourceScene) {
+          const sx = drawX + sourceScene.planX * drawW;
+          const sy = drawY + sourceScene.planY * drawH;
+          fpCtx.setLineDash([5, 5]);
+          fpCtx.strokeStyle = 'rgba(255,160,50,0.3)';
+          fpCtx.lineWidth = 1.5;
+          fpCtx.beginPath();
+          fpCtx.moveTo(sx, sy);
+          fpCtx.lineTo(px, py);
+          fpCtx.stroke();
+          fpCtx.setLineDash([]);
+        }
+
+        // Dashed circle
+        fpCtx.setLineDash([4, 4]);
+        fpCtx.strokeStyle = 'rgba(255, 160, 50, 0.6)';
+        fpCtx.lineWidth = 2;
+        fpCtx.beginPath();
+        fpCtx.arc(px, py, r, 0, Math.PI * 2);
+        fpCtx.fillStyle = 'rgba(255, 160, 50, 0.2)';
+        fpCtx.fill();
+        fpCtx.stroke();
+        fpCtx.setLineDash([]);
+
+        // Arrow inside
+        fpCtx.fillStyle = 'rgba(255, 160, 50, 0.9)';
+        fpCtx.font = 'bold 13px sans-serif';
+        fpCtx.textAlign = 'center';
+        fpCtx.textBaseline = 'middle';
+        fpCtx.fillText(arrow, px, py);
+        fpCtx.textBaseline = 'alphabetic';
+
+        // Label: scene name + floor
+        const floorLabel = targetFloor ? targetFloor.name : '?';
+        fpCtx.fillStyle = '#ddd';
+        fpCtx.font = '11px sans-serif';
+        fpCtx.fillText(s.name, px, py - r - 4);
+        fpCtx.fillStyle = 'rgba(255,160,50,0.8)';
+        fpCtx.font = '9px sans-serif';
+        fpCtx.fillText(arrow + ' ' + floorLabel, px, py + r + 12);
+      });
+    } else {
+      fpCanvas._ghostPositions = [];
+    }
   }
 
   // Drag scene markers on floor plan (only scenes on current floor)
@@ -2938,6 +3039,22 @@ ${threeJsSrc}
       if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < 20) {
         fpDragging = s.id;
         return;
+      }
+    }
+    // Check cross-floor ghost nodes
+    if (fpCanvas._ghostPositions) {
+      for (const gp of fpCanvas._ghostPositions) {
+        if (Math.sqrt((mx - gp.x) ** 2 + (my - gp.y) ** 2) < 18) {
+          const targetScene = state.scenes.find(sc => sc.id === gp.id);
+          if (targetScene) {
+            state.currentFloorId = targetScene.floorId;
+            state.currentSceneId = targetScene.id;
+            renderFloorTabs();
+            renderSceneList();
+            loadFloorPlanImage(() => { drawFloorPlan(); });
+          }
+          return;
+        }
       }
     }
     // Click on empty floor plan area = place unplaced scene on current floor
