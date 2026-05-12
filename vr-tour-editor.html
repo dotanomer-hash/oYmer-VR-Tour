@@ -1153,11 +1153,11 @@ ${threeJsSrc}
 
       const color = hsColorMap[hs.type] || 0xff7a00;
       const hex = '#' + color.toString(16).padStart(6, '0');
-      const iconChar = getHotspotIcon(hs, currentSceneId);
+      const floorDir = getHotspotIcon(hs, currentSceneId); // '👁', '👁⬆', or '👁⬇'
       const hsMesh = new THREE.Mesh(
         new THREE.CircleGeometry(4, 32),
         new THREE.MeshBasicMaterial({
-          map: makeTextTexture(iconChar, hex),
+          map: makeTextTexture('👁', hex),
           transparent: true,
           opacity: 0.7,
           side: THREE.DoubleSide,
@@ -1167,8 +1167,6 @@ ${threeJsSrc}
       hsMesh.position.copy(hsPos);
       const isFloor = (hs.placement === 'floor');
       if (isFloor) {
-        // Floor hotspot: tilt to lie flat like a ground marker
-        // Point normal along the radial direction from center, then tilt 70° toward ground
         hsMesh.lookAt(0, 0, 0);
         hsMesh.rotateX(Math.PI * 0.38);
       } else {
@@ -1188,6 +1186,27 @@ ${threeJsSrc}
         ringMesh.userData._pulse = true;
         ringMesh.userData._isFloor = true;
         vrHotspotGroup.add(ringMesh);
+      }
+
+      // 3D arrow for cross-floor hotspots (bobbing + glowing)
+      if (floorDir !== '👁') {
+        const isUp = floorDir === '👁⬆';
+        const arrowColor = isUp ? 0x00ff88 : 0xff4466;
+        // Cone arrow pointing up or down
+        const coneGeo = new THREE.ConeGeometry(1.5, 3, 8);
+        const coneMat = new THREE.MeshBasicMaterial({ color: arrowColor, transparent: true, opacity: 0.9, depthTest: false });
+        const coneMesh = new THREE.Mesh(coneGeo, coneMat);
+        // Position arrow above/below the hotspot along the radial direction
+        const radialDir = hsPos.clone().normalize();
+        const arrowOffset = radialDir.clone().multiplyScalar(isUp ? -6 : 6); // inward = up on screen, outward = down
+        coneMesh.position.copy(hsPos).add(arrowOffset);
+        coneMesh.lookAt(0, 0, 0);
+        if (!isUp) coneMesh.rotateX(Math.PI); // flip for down arrow
+        coneMesh.userData._arrow = true;
+        coneMesh.userData._arrowUp = isUp;
+        coneMesh.userData._basePos = coneMesh.position.clone();
+        coneMesh.userData._radialDir = radialDir;
+        vrHotspotGroup.add(coneMesh);
       }
 
       // Larger invisible hit area for easier gaze/laser targeting
@@ -1594,7 +1613,11 @@ ${threeJsSrc}
       el.style.left = sx + 'px';
       el.style.top = sy + 'px';
       el.style.pointerEvents = 'auto';
-      el.innerHTML = getHotspotIcon(hs, currentSceneId) + '<span class="hs-label">' + (hs.label||'') + '</span>';
+      const dir = getHotspotIcon(hs, currentSceneId);
+      let arrowHtml = '';
+      if (dir === '👁⬆') arrowHtml = '<span style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#0f8">▲</span>';
+      else if (dir === '👁⬇') arrowHtml = '<span style="position:absolute;bottom:-12px;left:50%;transform:translateX(-50%);font-size:10px;color:#f46">▼</span>';
+      el.innerHTML = '👁' + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
     });
@@ -2372,6 +2395,15 @@ ${threeJsSrc}
         const s = 0.92 + 0.08 * Math.sin(time * 1.8 + c.position.x);
         c.scale.set(s, s, s);
         c.material.opacity = 0.55 + 0.15 * Math.sin(time * 1.8 + c.position.x);
+      }
+      if (c.userData._arrow) {
+        // Bob up/down along radial direction + glow
+        const bob = Math.sin(time * 3) * 2; // faster bob
+        const dir = c.userData._radialDir;
+        const base = c.userData._basePos;
+        const offset = c.userData._arrowUp ? -bob : bob;
+        c.position.set(base.x + dir.x * offset, base.y + dir.y * offset, base.z + dir.z * offset);
+        c.material.opacity = 0.5 + 0.4 * Math.abs(Math.sin(time * 2.5));
       }
     });
   }
