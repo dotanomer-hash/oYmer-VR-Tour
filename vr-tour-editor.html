@@ -1838,7 +1838,7 @@ ${threeJsSrc}
 
     flatMapViewFloorId = null; // reset flat minimap to actual floor
     buildNav();
-    updateHotspots();
+    buildHotspots();
     updateVRHotspots();
     drawMinimap();
     drawVRMinimap();
@@ -1918,26 +1918,18 @@ ${threeJsSrc}
 
   renderer.domElement.style.touchAction = 'none';
 
-  // Hotspot projection
-  function updateHotspots() {
+  // Hotspot projection — build once per scene, reposition each frame
+  let hsElements = [];
+  function buildHotspots() {
     const layer = document.getElementById('hotspot-layer');
     layer.innerHTML = '';
+    hsElements = [];
     const s = TOUR.scenes.find(sc => sc.id === currentSceneId);
     if (!s) return;
     s.hotspots.forEach(hs => {
-      const phi = (90 - hs.lat) * Math.PI / 180;
-      const theta = hs.lon * Math.PI / 180;
-      const pos = new THREE.Vector3().setFromSphericalCoords(450, phi, theta);
-      const projected = pos.clone().project(camera);
-      if (projected.z > 1) return;
-      const sx = (projected.x * 0.5 + 0.5) * window.innerWidth;
-      const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
-
       const el = document.createElement('div');
       el.className = 'viewer-hotspot hs-' + hs.type;
       if (hs.placement === 'floor') el.classList.add('hs-floor');
-      el.style.left = sx + 'px';
-      el.style.top = sy + 'px';
       el.style.pointerEvents = 'auto';
       const dir = getHotspotIcon(hs, currentSceneId);
       let arrowHtml = '';
@@ -1947,6 +1939,24 @@ ${threeJsSrc}
       el.innerHTML = mainIcon + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
+      hsElements.push({ el: el, lat: hs.lat, lon: hs.lon });
+    });
+  }
+  function updateHotspots() {
+    hsElements.forEach(item => {
+      const phi = (90 - item.lat) * Math.PI / 180;
+      const theta = item.lon * Math.PI / 180;
+      const pos = new THREE.Vector3().setFromSphericalCoords(450, phi, theta);
+      const projected = pos.clone().project(camera);
+      if (projected.z > 1) {
+        item.el.style.display = 'none';
+        return;
+      }
+      item.el.style.display = '';
+      const sx = (projected.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+      item.el.style.left = sx + 'px';
+      item.el.style.top = sy + 'px';
     });
   }
 
