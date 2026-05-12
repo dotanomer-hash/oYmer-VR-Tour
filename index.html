@@ -1387,10 +1387,15 @@ ${threeJsSrc}
     // Cross-floor ghost nodes
     const crossFloorScenes = getCrossFloorTargets(floorId);
     const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
+    const currentFloorObj2 = (TOUR.floors || []).find(f => f.id === floorId);
+    const currentLevel2 = currentFloorObj2 ? (currentFloorObj2.level || 0) : 0;
     crossFloorScenes.forEach(s => {
       const p = ghostPositions[s.id];
       if (!p) return;
       const r = 7;
+      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
+      const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
+      const arrow = targetLevel > currentLevel2 ? '↑' : '↓';
       // Dashed circle
       ctx.setLineDash([3, 3]);
       ctx.strokeStyle = 'rgba(255, 160, 50, 0.5)';
@@ -1401,14 +1406,19 @@ ${threeJsSrc}
       ctx.fill();
       ctx.stroke();
       ctx.setLineDash([]);
+      // Arrow inside circle
+      ctx.fillStyle = 'rgba(255, 160, 50, 0.8)';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(arrow, p.x, p.y);
+      ctx.textBaseline = 'alphabetic';
       // Floor label
-      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
       const floorLabel = targetFloor ? targetFloor.name : '?';
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.font = '8px sans-serif';
-      ctx.textAlign = 'center';
       ctx.fillText(s.name.length > 10 ? s.name.substring(0, 9) + '..' : s.name, p.x, p.y + r + 10);
-      ctx.fillText('↕ ' + floorLabel, p.x, p.y + r + 20);
+      ctx.fillText(arrow + ' ' + floorLabel, p.x, p.y + r + 20);
     });
 
     // Header with floor name
@@ -2216,10 +2226,15 @@ ${threeJsSrc}
     // Cross-floor ghost nodes (drawn inside zoom transform)
     const crossFloorScenes = getCrossFloorTargets(floorId);
     const ghostPositions = getCrossFloorPositions(W, H, pad, crossFloorScenes);
+    const currentFloorObj = (TOUR.floors || []).find(f => f.id === floorId);
+    const currentLevel = currentFloorObj ? (currentFloorObj.level || 0) : 0;
     crossFloorScenes.forEach(s => {
       const p = ghostPositions[s.id];
       if (!p) return;
       const r = 18 * nodeScale * zoomScale;
+      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
+      const targetLevel = targetFloor ? (targetFloor.level || 0) : 0;
+      const arrow = targetLevel > currentLevel ? '↑' : '↓';
       // Dashed outline circle
       ctx.setLineDash([6 * nodeScale * zoomScale, 4 * nodeScale * zoomScale]);
       ctx.strokeStyle = 'rgba(255, 160, 50, 0.6)';
@@ -2230,22 +2245,21 @@ ${threeJsSrc}
       ctx.fill();
       ctx.stroke();
       ctx.setLineDash([]);
-      // Up/down arrow icon
+      // Directional arrow icon (↑ or ↓)
       ctx.fillStyle = 'rgba(255, 160, 50, 0.8)';
-      ctx.font = 'bold ' + Math.round(20 * nodeScale * zoomScale) + 'px sans-serif';
+      ctx.font = 'bold ' + Math.round(22 * nodeScale * zoomScale) + 'px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('↕', p.x, p.y);
+      ctx.fillText(arrow, p.x, p.y);
       ctx.textBaseline = 'alphabetic';
       // Scene name + floor label
-      const targetFloor = (TOUR.floors || []).find(f => f.id === (s.floorId || 1));
       const floorLabel = targetFloor ? targetFloor.name : '?';
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.font = Math.round(18 * nodeScale * zoomScale) + 'px sans-serif';
       ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 22 * nodeScale * zoomScale);
       ctx.fillStyle = 'rgba(255, 160, 50, 0.7)';
       ctx.font = Math.round(14 * nodeScale * zoomScale) + 'px sans-serif';
-      ctx.fillText(floorLabel, p.x, p.y + r + 38 * nodeScale * zoomScale);
+      ctx.fillText(arrow + ' ' + floorLabel, p.x, p.y + r + 38 * nodeScale * zoomScale);
       // Dashed line from current scene to ghost if current scene has a hotspot targeting it
       const currentScene = TOUR.scenes.find(sc => sc.id === currentSceneId);
       if (currentScene && positions[currentSceneId]) {
