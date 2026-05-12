@@ -1406,9 +1406,9 @@ ${threeJsSrc}
         vrHotspotGroup.add(coneMesh);
       }
 
-      // Larger invisible hit area for easier gaze/laser targeting
+      // Invisible hit area for gaze/laser targeting (narrower to avoid accidental triggers)
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(20, 16),
+        new THREE.CircleGeometry(12, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
@@ -2289,7 +2289,7 @@ ${threeJsSrc}
   }
 
   // Gaze system — clockwise pie fill that looks like the hotspot itself filling in
-  const gazeFillMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide, depthTest: false });
+  const gazeFillMat = new THREE.MeshBasicMaterial({ transparent: false, side: THREE.DoubleSide, depthTest: false });
   const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(6, 48, -Math.PI / 2, 0.01), gazeFillMat);
   gazeFillMesh.renderOrder = 998;
   gazeFillMesh.visible = false;
@@ -2316,22 +2316,35 @@ ${threeJsSrc}
     raycaster.ray.origin.copy(camPos);
     raycaster.ray.direction.copy(camDir);
 
-    // Check VR panel first (with cooldown so it doesn't auto-close)
+    // Check VR panel — only close by gazing at the Close button, not the whole panel
     if (vrPanelGroup.visible) {
       const elapsed = (performance.now() - vrPanelOpenTime) / 1000;
-      if (elapsed > VR_PANEL_COOLDOWN) {
-        const panelHits = raycaster.intersectObjects(vrPanelGroup.children);
-        if (panelHits.length > 0) {
-          if (gazeTarget === vrPanelGroup) {
+      if (elapsed > VR_PANEL_COOLDOWN && vrPanelCloseMesh) {
+        const closeHits = raycaster.intersectObject(vrPanelCloseMesh);
+        if (closeHits.length > 0) {
+          if (gazeTarget === vrPanelCloseMesh) {
             gazeTimer += dt;
             gazeGrace = 0;
             if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGrace = 0; gazeFillMesh.visible = false; }
-          } else { gazeTarget = vrPanelGroup; gazeTimer = 0; gazeGrace = 0; }
+          } else { gazeTarget = vrPanelCloseMesh; gazeTimer = 0; gazeGrace = 0; }
+          // Show gaze fill on the close button
+          gazeFillMesh.position.copy(vrPanelCloseMesh.getWorldPosition(new THREE.Vector3()));
+          gazeFillMesh.position.add(camPos.clone().sub(gazeFillMesh.position).normalize().multiplyScalar(0.2));
+          gazeFillMesh.lookAt(camPos);
+          gazeFillMesh.visible = true;
+          const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
+          gazeFillMesh.geometry.dispose();
+          gazeFillMesh.geometry = new THREE.CircleGeometry(1.5, 48, -Math.PI / 2, Math.max(0.05, pct) * Math.PI * 2);
+          gazeFillMat.map = null;
+          gazeFillMat.color.set(0xcc0000);
+          gazeFillMat.opacity = 0.9;
+          gazeFillMat.needsUpdate = true;
           return;
         }
-      } else {
-        return;
       }
+      // Panel is open but not gazing at close button — block hotspot gaze, keep panel showing
+      if (gazeTarget === vrPanelCloseMesh) { gazeTarget = null; gazeTimer = 0; gazeFillMesh.visible = false; }
+      return;
     }
 
     const hits = raycaster.intersectObjects(vrHotspotGroup.children);
@@ -2381,7 +2394,7 @@ ${threeJsSrc}
       gazeFillMesh.geometry.dispose();
       const arc = Math.max(0.05, pct) * Math.PI * 2;
       gazeFillMesh.geometry = new THREE.CircleGeometry(6, 48, -Math.PI / 2, arc);
-      gazeFillMat.opacity = 1.0;
+      gazeFillMat.transparent = false;
 
       if (gazeTimer >= GAZE_DWELL) {
         handleHotspotClick(hitTarget.userData);
@@ -2575,8 +2588,8 @@ ${threeJsSrc}
 
       // Full label only on hover
       if (s.id === mapHoveredSceneId) {
-        const labelFontSize = Math.round(24 * nodeScale * zoomScale);
-        const labelText = s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name;
+        const labelFontSize = Math.round(16 * nodeScale * zoomScale);
+        const labelText = s.name.length > 22 ? s.name.substring(0, 21) + '..' : s.name;
         ctx.font = 'bold ' + labelFontSize + 'px sans-serif';
         const tw = ctx.measureText(labelText).width;
         const lx = p.x, ly = p.y + r + 22 * nodeScale * zoomScale;
@@ -2600,7 +2613,7 @@ ${threeJsSrc}
     if (activeMode && TOUR.floors && TOUR.floors.length > 1) {
       // Show arrows + floor name centered
       const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
-      const hdrText = '◀  ' + headerFloorName + '  ▶';
+      const hdrText = '▼  ' + headerFloorName + '  ▲';
       const tw = ctx.measureText(hdrText).width;
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.beginPath();
@@ -2612,7 +2625,7 @@ ${threeJsSrc}
       // Small hint
       ctx.font = Math.round(14 * hdrScale) + 'px sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillText('thumbstick ←→ switch floor  |  ↕ zoom  |  trigger drag = pan  |  grip = close', W / 2, hdrY + hdrFontSize + 4);
+      ctx.fillText('thumbstick ↕ switch floor  |  ←→ zoom  |  trigger drag = pan  |  grip = close', W / 2, hdrY + hdrFontSize + 4);
     } else {
       const tw = ctx.measureText(headerFloorName).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -2820,10 +2833,11 @@ ${threeJsSrc}
           if (session) {
             for (const src of session.inputSources) {
               if (!src.gamepad || src.gamepad.axes.length < 4) continue;
-              const ay = src.gamepad.axes[3];
-              if (Math.abs(ay) > 0.2) {
+              // Thumbstick left/right = zoom
+              const ax = src.gamepad.axes[2];
+              if (Math.abs(ax) > 0.2) {
                 const oldZoom = mapZoom;
-                mapZoom = Math.max(1, Math.min(6, mapZoom - ay * 0.04));
+                mapZoom = Math.max(1, Math.min(6, mapZoom + ax * 0.04));
                 if (Math.abs(mapZoom - oldZoom) > 0.001) {
                   if (mapZoom <= 1) {
                     mapPanX = 0;
@@ -2835,12 +2849,12 @@ ${threeJsSrc}
                   mapNeedsRedraw = true;
                 }
               }
-              // Thumbstick left/right = switch floor
-              const ax = src.gamepad.axes[2];
-              if (Math.abs(ax) > 0.5 && mapFloorSwitchCooldown <= 0 && TOUR.floors && TOUR.floors.length > 1) {
+              // Thumbstick up/down = switch floor
+              const ay = src.gamepad.axes[3];
+              if (Math.abs(ay) > 0.5 && mapFloorSwitchCooldown <= 0 && TOUR.floors && TOUR.floors.length > 1) {
                 const sorted = [...TOUR.floors].sort((a, b) => a.level - b.level);
                 const curIdx = sorted.findIndex(f => f.id === mapViewFloorId);
-                const newIdx = ax > 0 ? Math.min(curIdx + 1, sorted.length - 1) : Math.max(curIdx - 1, 0);
+                const newIdx = ay < 0 ? Math.min(curIdx + 1, sorted.length - 1) : Math.max(curIdx - 1, 0);
                 if (newIdx !== curIdx) {
                   mapViewFloorId = sorted[newIdx].id;
                   mapZoom = 1.0;
