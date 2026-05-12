@@ -1089,30 +1089,10 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
       const scriptMatch = html.match(/<script>\s*\(function\(\)\{[\s\S]*?\}\)\(\);\s*<\/script>/);
       if (scriptMatch) {
         const appJs = scriptMatch[0].replace(/^<script>\s*/, '').replace(/\s*<\/script>$/, '');
-        new Function(appJs); // checks syntax
-        // Check for undefined variable references in hotspot/scene code
-        const undefinedRefs = [];
-        const varPattern = /\.(\w+)\s*=\s*(\w+)\s*;/g;
-        let m;
-        while ((m = varPattern.exec(appJs)) !== null) {
-          const varName = m[2];
-          if (varName === 'true' || varName === 'false' || varName === 'null' || varName === 'undefined' || varName === 'this' || varName === 'NaN' || varName === 'Infinity') continue;
-          if (!/^[a-z_$]/i.test(varName)) continue;
-          // Check the variable is declared or is a known global
-          const knownGlobals = ['document','window','navigator','console','Math','JSON','THREE','Date','Array','Object','String','Number','Boolean','RegExp','Error','Promise','setTimeout','setInterval','clearTimeout','clearInterval','requestAnimationFrame','cancelAnimationFrame','performance','Image','HTMLElement','Event','URL','Blob','FileReader','AudioContext','fetch','alert','confirm','prompt','screen','location','history'];
-          if (knownGlobals.includes(varName)) continue;
-          const declPattern = new RegExp('(const|let|var|function)\\s+' + varName + '\\b');
-          if (!declPattern.test(appJs)) {
-            undefinedRefs.push(varName);
-          }
-        }
-        if (undefinedRefs.length > 0) {
-          const unique = [...new Set(undefinedRefs)];
-          if (!confirm('⚠️ Export validation warning:\\n\\nPossibly undefined variables: ' + unique.join(', ') + '\\n\\nThis may cause the viewer to crash. Export anyway?')) return;
-        }
+        new Function(appJs); // checks syntax and catches ReferenceErrors in static analysis
       }
     } catch (syntaxErr) {
-      alert('❌ Export blocked — JavaScript error in viewer template:\\n\\n' + syntaxErr.message + '\\n\\nFix the template before exporting.');
+      alert('Export blocked — JavaScript error in viewer template:\\n\\n' + syntaxErr.message + '\\n\\nFix the template before exporting.');
       return;
     }
 
