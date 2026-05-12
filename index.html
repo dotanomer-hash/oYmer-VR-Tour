@@ -36,7 +36,9 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 #ctx-menu .ctx-item:hover { background: #ff7a00; color: #fff; }
 
 /* Center viewport */
-#viewport-container { flex: 1; position: relative; background: #0a0a1a; display: flex; align-items: center; justify-content: center; }
+#viewport-container { flex: 1; position: relative; background: #0a0a1a; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+#viewport-container.dragging-hotspot { cursor: grabbing !important; }
+#viewport-container.dragging-hotspot .hotspot-overlay { pointer-events: none !important; }
 #viewport-container canvas { display: block; width: 100%; height: 100%; }
 #empty-state { text-align: center; color: #666; }
 #empty-state h2 { font-size: 20px; margin-bottom: 8px; color: #888; }
@@ -356,57 +358,86 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   }
 
   // === Pointer Handling (viewport) ===
+  // Find hotspot near a screen position (px distance)
+  function findHotspotAtScreen(clientX, clientY) {
+    const scn = getCurrentScene();
+    if (!scn) return null;
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    let closest = null, closestDist = 30; // 30px threshold
+    scn.hotspots.forEach(hs => {
+      const phi = THREE.MathUtils.degToRad(90 - hs.lat);
+      const theta = THREE.MathUtils.degToRad(hs.lon);
+      const pos = new THREE.Vector3().setFromSphericalCoords(450, phi, theta);
+      const projected = pos.clone().project(camera);
+      if (projected.z > 1) return; // behind camera
+      const sx = (projected.x * 0.5 + 0.5) * w + renderer.domElement.getBoundingClientRect().left;
+      const sy = (-projected.y * 0.5 + 0.5) * h + renderer.domElement.getBoundingClientRect().top;
+      const dist = Math.sqrt((clientX - sx) ** 2 + (clientY - sy) ** 2);
+      if (dist < closestDist) { closestDist = dist; closest = hs; }
+    });
+    return closest;
+  }
+
+  // Raycast mouse to sphere, return {lon, lat} or null
+  function screenToSphere(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointerVec.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointerVec.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerVec, camera);
+    const intersects = raycaster.intersectObject(sphere);
+    if (intersects.length > 0) {
+      const point = intersects[0].point;
+      const r = point.length();
+      return {
+        lon: THREE.MathUtils.radToDeg(Math.atan2(point.x, point.z)),
+        lat: 90 - THREE.MathUtils.radToDeg(Math.acos(point.y / r))
+      };
+    }
+    return null;
+  }
+
   function setupPointerEvents() {
     const el = viewportContainer;
-    let draggingHotspotId = null;
+    let draggingHs = null; // direct reference to hotspot object being dragged
 
     el.addEventListener('mousedown', (e) => {
       if (e.target !== renderer.domElement && !e.target.classList.contains('hotspot-overlay')) return;
       e.preventDefault();
+      e.stopPropagation();
       pointerDown = true;
       pointerMoved = false;
-      draggingHotspotId = null;
+      draggingHs = null;
       pointerStartX = e.clientX;
       pointerStartY = e.clientY;
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
 
-      // Mousedown on a hotspot = prepare to drag it
-      if (e.target.classList.contains('hotspot-overlay')) {
-        draggingHotspotId = parseInt(e.target.dataset.hotspotId);
-        selectHotspot(draggingHotspotId);
+      // Check if mousedown is near any hotspot (by screen-space distance)
+      const hit = findHotspotAtScreen(e.clientX, e.clientY);
+      if (hit) {
+        draggingHs = hit;
+        selectHotspot(hit.id);
+        el.classList.add('dragging-hotspot');
       }
     });
 
     document.addEventListener('mousemove', (e) => {
       if (!pointerDown) return;
+      e.preventDefault();
       const dx = e.clientX - pointerStartX;
       const dy = e.clientY - pointerStartY;
       if (Math.abs(dx) > 5 || Math.abs(dy) > 5) pointerMoved = true;
 
-      if (draggingHotspotId !== null && pointerMoved) {
-        // Dragging a hotspot — raycast to sphere for new position
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(pointerVec, camera);
-        const intersects = raycaster.intersectObject(sphere);
-        if (intersects.length > 0) {
-          const point = intersects[0].point;
-          const rr = point.length();
-          const phi = Math.acos(point.y / rr);
-          const theta = Math.atan2(point.x, point.z);
-          const scn = getCurrentScene();
-          if (scn) {
-            const hs = scn.hotspots.find(h => h.id === draggingHotspotId);
-            if (hs) {
-              hs.lon = THREE.MathUtils.radToDeg(theta);
-              hs.lat = 90 - THREE.MathUtils.radToDeg(phi);
-            }
-          }
+      if (draggingHs && pointerMoved) {
+        // Drag hotspot: raycast cursor to sphere for new lon/lat
+        const coords = screenToSphere(e.clientX, e.clientY);
+        if (coords) {
+          draggingHs.lon = coords.lon;
+          draggingHs.lat = coords.lat;
         }
-      } else if (draggingHotspotId === null) {
-        // Regular camera pan
+      } else if (!draggingHs) {
+        // Camera orbit
         const movX = e.clientX - lastPointerX;
         const movY = e.clientY - lastPointerY;
         lon -= movX * 0.3;
@@ -420,29 +451,20 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     document.addEventListener('mouseup', (e) => {
       if (!pointerDown) return;
       pointerDown = false;
+      el.classList.remove('dragging-hotspot');
 
-      if (draggingHotspotId !== null) {
-        // Was on a hotspot — if dragged, position already updated. If just clicked, it's already selected.
-        draggingHotspotId = null;
+      if (draggingHs) {
+        // Hotspot was clicked or dragged — position already updated during drag
+        draggingHs = null;
         return;
       }
 
-      if (pointerMoved) return; // was panning camera
+      if (pointerMoved) return; // was camera-panning, not a click
 
       // Click on empty panorama = place new hotspot
       if (state.currentSceneId) {
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(pointerVec, camera);
-        const intersects = raycaster.intersectObject(sphere);
-        if (intersects.length > 0) {
-          const point = intersects[0].point;
-          const rr = point.length();
-          const phi = Math.acos(point.y / rr);
-          const theta = Math.atan2(point.x, point.z);
-          placeHotspot(THREE.MathUtils.radToDeg(theta), 90 - THREE.MathUtils.radToDeg(phi));
-        }
+        const coords = screenToSphere(e.clientX, e.clientY);
+        if (coords) placeHotspot(coords.lon, coords.lat);
       }
     });
   }
