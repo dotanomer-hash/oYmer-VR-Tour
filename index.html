@@ -38,6 +38,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 /* Center viewport */
 #viewport-container { flex: 1; position: relative; background: #0a0a1a; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
 #viewport-container.dragging-hotspot { cursor: grabbing !important; }
+#viewport-container.placing-hotspot { cursor: crosshair !important; }
+#viewport-container.placing-hotspot .hotspot-overlay { pointer-events: none !important; }
 #viewport-container.dragging-hotspot .hotspot-overlay { pointer-events: none !important; }
 #viewport-container canvas { display: block; width: 100%; height: 100%; }
 #empty-state { text-align: center; color: #666; }
@@ -147,7 +149,10 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <!-- Right panel -->
   <div id="props-panel">
     <div class="panel-header">Hotspot Properties</div>
-    <div id="props-empty">Click in viewport to place a hotspot.<br><small style="color:#888">Drag a hotspot to move it.</small></div>
+    <div id="props-empty">
+      <button id="btn-add-hotspot" style="width:100%;padding:10px;font-size:14px;background:#ff7a00;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:8px">+ Add Hotspot</button>
+      <small style="color:#888">Drag existing hotspots to move them.</small>
+    </div>
     <div id="props-content">
       <label>Type</label>
       <div class="type-buttons">
@@ -316,6 +321,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   let lastPointerX = 0, lastPointerY = 0;
   let hotspotSprites = []; // {sprite, hotspotId}
   let raycaster, pointerVec;
+  let placingHotspot = false; // true when in "add hotspot" placement mode
 
   function initThree() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -491,10 +497,14 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
       if (pointerMoved) return; // was camera-panning, not a click
 
-      // Click on empty panorama = place new hotspot
-      if (state.currentSceneId) {
+      // Click on empty panorama = place new hotspot (only in placement mode)
+      if (placingHotspot && state.currentSceneId) {
         const coords = screenToSphere(e.clientX, e.clientY);
-        if (coords) placeHotspot(coords.lon, coords.lat);
+        if (coords) {
+          placeHotspot(coords.lon, coords.lat);
+          placingHotspot = false;
+          viewportContainer.classList.remove('placing-hotspot');
+        }
       }
     });
   }
@@ -2679,6 +2689,13 @@ ${threeJsSrc}
   }
 
   // === Toolbar Events ===
+  document.getElementById('btn-add-hotspot').addEventListener('click', () => {
+    if (!state.currentSceneId) { alert('Load a scene first.'); return; }
+    placingHotspot = true;
+    viewportContainer.classList.add('placing-hotspot');
+    deselectHotspot();
+  });
+
   document.getElementById('btn-add-scene').addEventListener('click', () => fileScene.click());
   document.getElementById('btn-save').addEventListener('click', saveProject);
   document.getElementById('btn-load').addEventListener('click', async () => {
@@ -2785,6 +2802,8 @@ ${threeJsSrc}
         deselectHotspot();
       }
     } else if (e.key === 'Escape') {
+      placingHotspot = false;
+      viewportContainer.classList.remove('placing-hotspot');
       deselectHotspot();
     } else if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
