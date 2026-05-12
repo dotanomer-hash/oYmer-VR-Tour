@@ -1170,8 +1170,17 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #vr-button { position: fixed; bottom: 20px; right: 20px; background: #ff7a00; border: none; color: #fff; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; z-index: 1000; display: none; }
 
 /* Minimap HUD */
-#minimap { position: fixed; bottom: 16px; left: 16px; z-index: 900; pointer-events: auto; border-radius: 10px; overflow: hidden; opacity: 0.75; transition: opacity 0.3s; cursor: pointer; }
+#minimap-container { position: fixed; bottom: 16px; left: 16px; z-index: 900; pointer-events: auto; }
+#minimap { border-radius: 10px; overflow: hidden; opacity: 0.75; transition: opacity 0.3s; cursor: pointer; display: block; }
 #minimap:hover { opacity: 0.95; }
+#minimap-container.enlarged { bottom: 0; left: 0; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); }
+#minimap-container.enlarged #minimap { width: 80vmin; height: 80vmin; opacity: 1; border-radius: 16px; box-shadow: 0 0 40px rgba(255,122,0,0.4); }
+.minimap-floor-btn { position: absolute; top: 50%; background: rgba(0,0,0,0.7); color: #ff7a00; border: 2px solid #ff7a00; border-radius: 6px; padding: 10px 6px; cursor: pointer; font-size: 20px; z-index: 901; transform: translateY(-50%); line-height: 1; display: none; }
+.minimap-floor-btn:hover { background: #ff7a00; color: #fff; }
+#minimap-floor-prev { left: 8px; }
+#minimap-floor-next { right: 8px; }
+#minimap-close { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #666; border-radius: 50%; width: 36px; height: 36px; font-size: 18px; cursor: pointer; display: none; z-index: 901; }
+#minimap-close:hover { background: #c00; }
 </style>
 </head>
 <body>
@@ -1195,7 +1204,12 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 </div>
 
 <button id="vr-button">Enter VR</button>
-<canvas id="minimap" width="220" height="220"></canvas>
+<div id="minimap-container">
+  <button class="minimap-floor-btn" id="minimap-floor-prev">◀</button>
+  <canvas id="minimap" width="220" height="220"></canvas>
+  <button class="minimap-floor-btn" id="minimap-floor-next">▶</button>
+  <button id="minimap-close">✕</button>
+</div>
 
 <script>
 ${threeJsSrc}
@@ -1405,6 +1419,7 @@ ${threeJsSrc}
   // Minimap HUD — multi-floor support
   let minimapFloorImg = null;
   let currentFloorId = null;
+  let flatMapViewFloorId = null; // floor shown on flat minimap (null = current floor)
 
   function getCurrentFloorId() {
     const s = TOUR.scenes.find(sc => sc.id === currentSceneId);
@@ -1446,8 +1461,8 @@ ${threeJsSrc}
   }
   loadFloorPlanImage();
 
-  function getScenePositions(W, H, pad) {
-    const floorId = getCurrentFloorId();
+  function getScenePositions(W, H, pad, overrideFloorId) {
+    const floorId = overrideFloorId || getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
     const count = scenes.length;
     const positions = {};
@@ -1501,11 +1516,11 @@ ${threeJsSrc}
       ctx.fill();
     }
 
-    const floorId = getCurrentFloorId();
+    const floorId = flatMapViewFloorId || getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
     if (!scenes.length) return;
     const pad = 25;
-    const positions = getScenePositions(W, H, pad);
+    const positions = getScenePositions(W, H, pad, floorId);
 
     // Connection lines
     ctx.lineWidth = 1.5;
@@ -1560,29 +1575,96 @@ ${threeJsSrc}
     });
 
     // Header with floor name
-    const floorName = getCurrentFloorName();
-    ctx.fillStyle = 'rgba(255,122,0,0.8)';
+    const viewFloor2 = flatMapViewFloorId ? (TOUR.floors || []).find(f => f.id === flatMapViewFloorId) : getCurrentFloor();
+    const floorName = viewFloor2 ? viewFloor2.name : 'PLAN VIEW';
+    const isOtherFloor = flatMapViewFloorId && flatMapViewFloorId !== getCurrentFloorId();
+    ctx.fillStyle = isOtherFloor ? 'rgba(100,200,255,0.9)' : 'rgba(255,122,0,0.8)';
     ctx.font = 'bold 10px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(floorName || 'PLAN VIEW', 8, 14);
+    ctx.textAlign = 'center';
+    ctx.fillText(floorName, W / 2, 14);
+
   }
 
-  // Minimap click navigation (current floor scenes only)
+  // Flat minimap: small = preview only, click to enlarge
+  let flatMinimapEnlarged = false;
+  const minimapContainer = document.getElementById('minimap-container');
+
+  function enlargeFlatMinimap() {
+    flatMinimapEnlarged = true;
+    flatMapViewFloorId = getCurrentFloorId();
+    minimapContainer.classList.add('enlarged');
+    document.getElementById('minimap-close').style.display = 'block';
+    if (TOUR.floors && TOUR.floors.length > 1) {
+      document.getElementById('minimap-floor-prev').style.display = 'block';
+      document.getElementById('minimap-floor-next').style.display = 'block';
+    }
+    drawMinimap();
+  }
+
+  function shrinkFlatMinimap() {
+    flatMinimapEnlarged = false;
+    flatMapViewFloorId = null;
+    minimapContainer.classList.remove('enlarged');
+    document.getElementById('minimap-close').style.display = 'none';
+    document.getElementById('minimap-floor-prev').style.display = 'none';
+    document.getElementById('minimap-floor-next').style.display = 'none';
+    // Reload current floor's plan image
+    loadFloorPlanImage();
+    if (minimapFloorImg && minimapFloorImg.complete) drawMinimap();
+    else if (minimapFloorImg) minimapFloorImg.onload = function() { drawMinimap(); };
+    else drawMinimap();
+  }
+
   document.getElementById('minimap').addEventListener('click', (e) => {
-    const cvs = e.target;
+    if (!flatMinimapEnlarged) {
+      enlargeFlatMinimap();
+      return;
+    }
+    // Enlarged: click scene to navigate
+    const cvs = document.getElementById('minimap');
     const rect = cvs.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
     const my = (e.clientY - rect.top) * (cvs.height / rect.height);
-    const positions = getScenePositions(cvs.width, cvs.height, 25);
-    const floorScenes = getScenesForFloor(getCurrentFloorId());
+    const fid = flatMapViewFloorId || getCurrentFloorId();
+    const positions = getScenePositions(cvs.width, cvs.height, 25, fid);
+    const floorScenes = getScenesForFloor(fid);
     for (const s of floorScenes) {
       const p = positions[s.id];
       if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 18) {
         goToScene(s.id);
+        shrinkFlatMinimap();
         return;
       }
     }
   });
+
+  // Close enlarged minimap
+  document.getElementById('minimap-close').addEventListener('click', (e) => { e.stopPropagation(); shrinkFlatMinimap(); });
+  minimapContainer.addEventListener('click', (e) => {
+    if (flatMinimapEnlarged && e.target === minimapContainer) shrinkFlatMinimap();
+  });
+
+  // Floor switching arrows
+  function switchFlatMapFloor(dir) {
+    if (!TOUR.floors || TOUR.floors.length <= 1) return;
+    const sorted = [...TOUR.floors].sort((a, b) => a.level - b.level);
+    const curViewId = flatMapViewFloorId || getCurrentFloorId();
+    const curIdx = sorted.findIndex(f => f.id === curViewId);
+    const newIdx = dir > 0 ? Math.min(curIdx + 1, sorted.length - 1) : Math.max(curIdx - 1, 0);
+    if (newIdx === curIdx) return;
+    flatMapViewFloorId = sorted[newIdx].id;
+    const viewedFloor = sorted[newIdx];
+    if (viewedFloor.floorPlanData) {
+      minimapFloorImg = new Image();
+      minimapFloorImg.onload = function() { drawMinimap(); };
+      minimapFloorImg.src = viewedFloor.floorPlanData;
+    } else {
+      minimapFloorImg = null;
+    }
+    drawMinimap();
+  }
+  document.getElementById('minimap-floor-prev').addEventListener('click', (e) => { e.stopPropagation(); switchFlatMapFloor(-1); });
+  document.getElementById('minimap-floor-next').addEventListener('click', (e) => { e.stopPropagation(); switchFlatMapFloor(1); });
 
   function loadScene(id) {
     const s = TOUR.scenes.find(sc => sc.id === id);
@@ -1648,6 +1730,7 @@ ${threeJsSrc}
       }
     }
 
+    flatMapViewFloorId = null; // reset flat minimap to actual floor
     buildNav();
     updateHotspots();
     updateVRHotspots();
@@ -1669,7 +1752,7 @@ ${threeJsSrc}
 
   // === Input: mouse/touch drag for desktop + device orientation for Quest flat mode ===
   function isOverUI(el) {
-    return el && (el.closest('#sidebar') || el.closest('#sidebar-toggle') || el.closest('#info-modal') || el.closest('#vr-button') || el.closest('#minimap') || el.closest('.viewer-hotspot'));
+    return el && (el.closest('#sidebar') || el.closest('#sidebar-toggle') || el.closest('#info-modal') || el.closest('#vr-button') || el.closest('#minimap-container') || el.closest('.viewer-hotspot'));
   }
 
   // Mouse drag (desktop)
@@ -2240,6 +2323,8 @@ ${threeJsSrc}
   let mapNeedsRedraw = false;
   let mapHoveredSceneId = null; // scene id that laser/mouse is hovering over on map
   let mapImageReady = false;
+  let mapViewFloorId = null; // floor shown on map (may differ from actual floor when browsing)
+  let mapFloorSwitchCooldown = 0; // prevent rapid switching
 
   // Update everything when floor plan image loads
   if (minimapFloorImg) {
@@ -2308,7 +2393,7 @@ ${threeJsSrc}
     ctx.lineWidth = activeMode ? 6 : 3;
     ctx.stroke();
 
-    const floorId = getCurrentFloorId();
+    const floorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
     if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
     const pad = Math.max(40, W * 0.04);
@@ -2400,11 +2485,26 @@ ${threeJsSrc}
     ctx.restore(); // undo zoom/pan transform
 
     // Header — always on top, not affected by zoom — show floor name
-    const headerFloorName = getCurrentFloorName();
-    ctx.fillStyle = 'rgba(255,122,0,0.9)';
-    ctx.font = 'bold ' + Math.round(22 * Math.max(1, W / 512)) + 'px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(headerFloorName || 'PLAN VIEW', 24, 38);
+    const viewFloor = (vrMinimapActive && mapViewFloorId) ? (TOUR.floors || []).find(f => f.id === mapViewFloorId) : getCurrentFloor();
+    const headerFloorName = viewFloor ? viewFloor.name : 'PLAN VIEW';
+    const hdrScale = Math.max(1, W / 512);
+    const hdrFontSize = Math.round(22 * hdrScale);
+    ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
+    if (activeMode && TOUR.floors && TOUR.floors.length > 1) {
+      // Show arrows + floor name centered
+      const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
+      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.9)' : 'rgba(255,122,0,0.9)';
+      ctx.textAlign = 'center';
+      ctx.fillText('◀  ' + headerFloorName + '  ▶', W / 2, 38);
+      // Small hint
+      ctx.font = Math.round(13 * hdrScale) + 'px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('thumbstick ←→ switch floor', W / 2, 38 + hdrFontSize);
+    } else {
+      ctx.fillStyle = 'rgba(255,122,0,0.9)';
+      ctx.textAlign = 'left';
+      ctx.fillText(headerFloorName, 24, 38);
+    }
 
     // Zoom indicator when active and zoomed
     if (activeMode && mapZoom !== 1) {
@@ -2425,6 +2525,8 @@ ${threeJsSrc}
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
+    mapViewFloorId = getCurrentFloorId();
+    mapFloorSwitchCooldown = 0;
     vrMinimapMesh.geometry.dispose();
     // Large plane that almost fills the view — respect actual aspect ratio
     let bigW, bigH;
@@ -2459,6 +2561,13 @@ ${threeJsSrc}
     mapPanX = 0;
     mapPanY = 0;
     mapDragStart = null;
+    // Reset to actual current floor and reload its floor plan image
+    const actualFloorId = getCurrentFloorId();
+    if (mapViewFloorId !== actualFloorId) {
+      mapViewFloorId = actualFloorId;
+      loadFloorPlanImage(); // reload current floor's plan
+    }
+    mapViewFloorId = actualFloorId;
     vrMinimapMesh.geometry.dispose();
     const sz = getSmallPlaneSize();
     vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
@@ -2479,7 +2588,8 @@ ${threeJsSrc}
     }
     const pad = Math.max(40, W * 0.04);
     const positions = getScenePositions(W, H, pad);
-    const floorScenes = getScenesForFloor(getCurrentFloorId());
+    const clickFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
+    const floorScenes = getScenesForFloor(clickFloorId);
     let closest = null;
     let closestDist = Infinity;
     for (const s of floorScenes) {
@@ -2607,6 +2717,48 @@ ${threeJsSrc}
                   mapNeedsRedraw = true;
                 }
               }
+              // Thumbstick left/right = switch floor
+              const ax = src.gamepad.axes[2];
+              if (Math.abs(ax) > 0.5 && mapFloorSwitchCooldown <= 0 && TOUR.floors && TOUR.floors.length > 1) {
+                const sorted = [...TOUR.floors].sort((a, b) => a.level - b.level);
+                const curIdx = sorted.findIndex(f => f.id === mapViewFloorId);
+                const newIdx = ax > 0 ? Math.min(curIdx + 1, sorted.length - 1) : Math.max(curIdx - 1, 0);
+                if (newIdx !== curIdx) {
+                  mapViewFloorId = sorted[newIdx].id;
+                  mapZoom = 1.0;
+                  mapPanX = 0;
+                  mapPanY = 0;
+                  // Load floor plan image for the viewed floor
+                  const viewedFloor = sorted[newIdx];
+                  if (viewedFloor.floorPlanData) {
+                    mapImageReady = false;
+                    minimapFloorImg = new Image();
+                    minimapFloorImg.onload = function() {
+                      mapAspect = this.naturalHeight / this.naturalWidth;
+                      mapCanvasW = Math.min(this.naturalWidth, 4096);
+                      mapCanvasH = Math.round(mapCanvasW * mapAspect);
+                      if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+                      vrMinimapCanvas.width = mapCanvasW;
+                      vrMinimapCanvas.height = mapCanvasH;
+                      mapImageReady = true;
+                      // Rebuild enlarged geometry for new aspect
+                      let bigW2, bigH2;
+                      if (mapAspect < 1) { bigW2 = 7; bigH2 = bigW2 * mapAspect; }
+                      else { bigH2 = 7; bigW2 = bigH2 / mapAspect; }
+                      vrMinimapMesh.geometry.dispose();
+                      vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW2, bigH2);
+                      drawVRMinimap();
+                    };
+                    minimapFloorImg.src = viewedFloor.floorPlanData;
+                  } else {
+                    minimapFloorImg = null;
+                    mapImageReady = false;
+                  }
+                  mapNeedsRedraw = true;
+                }
+                mapFloorSwitchCooldown = 20; // ~20 frames cooldown
+              }
+              if (mapFloorSwitchCooldown > 0) mapFloorSwitchCooldown--;
             }
           }
           // Trigger held + move controller = drag/pan the map
@@ -2650,7 +2802,8 @@ ${threeJsSrc}
               const hpos = getScenePositions(mW, mH, hpad);
               const hNodeScale = Math.max(1, mW / 512) * 0.8;
               const hHitR = 40 * hNodeScale;
-              for (const sc of getScenesForFloor(getCurrentFloorId())) {
+              const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
+              for (const sc of getScenesForFloor(hoverFloorId)) {
                 const hp = hpos[sc.id];
                 if (hp && Math.sqrt((hmx - hp.x) ** 2 + (hmy - hp.y) ** 2) < hHitR) {
                   mapHoveredSceneId = sc.id;
