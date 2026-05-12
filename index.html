@@ -1344,11 +1344,13 @@ ${threeJsSrc}
         ctx.fill();
       });
 
-      // Label
-      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.7)';
-      ctx.font = (isCurrent ? 'bold ' : '') + '10px sans-serif';
+      // Short name inside circle (black text)
+      ctx.fillStyle = isCurrent ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)';
+      ctx.font = 'bold ' + Math.min(r, 8) + 'px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(s.name.length > 12 ? s.name.substring(0, 11) + '..' : s.name, p.x, p.y + r + 14);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s.name.substring(0, 3), p.x, p.y);
+      ctx.textBaseline = 'alphabetic';
     });
 
     // Header with floor name
@@ -2000,6 +2002,7 @@ ${threeJsSrc}
   let mapZoom = 1.0;
   let mapPanX = 0, mapPanY = 0;
   let mapNeedsRedraw = false;
+  let mapHoveredSceneId = null; // scene id that laser/mouse is hovering over on map
   let mapImageReady = false;
 
   // Update everything when floor plan image loads
@@ -2133,11 +2136,28 @@ ${threeJsSrc}
         ctx.fill();
       });
 
-      // Label
-      ctx.fillStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.75)';
-      ctx.font = (isCurrent ? 'bold ' : '') + Math.round(24 * nodeScale * zoomScale) + 'px sans-serif';
+      // Short name inside circle (black text)
+      const fontSize = Math.round(Math.min(r * 0.9, 20 * nodeScale * zoomScale));
+      ctx.fillStyle = isCurrent ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)';
+      ctx.font = 'bold ' + fontSize + 'px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name, p.x, p.y + r + 30 * nodeScale * zoomScale);
+      ctx.textBaseline = 'middle';
+      const abbr = s.name.length > 3 ? s.name.substring(0, 3) : s.name;
+      ctx.fillText(abbr, p.x, p.y);
+      ctx.textBaseline = 'alphabetic';
+
+      // Full label only on hover
+      if (s.id === mapHoveredSceneId) {
+        const labelFontSize = Math.round(24 * nodeScale * zoomScale);
+        const labelText = s.name.length > 14 ? s.name.substring(0, 13) + '..' : s.name;
+        ctx.font = 'bold ' + labelFontSize + 'px sans-serif';
+        const tw = ctx.measureText(labelText).width;
+        const lx = p.x, ly = p.y + r + 22 * nodeScale * zoomScale;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(lx - tw / 2 - 6, ly - labelFontSize + 2, tw + 12, labelFontSize + 6);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(labelText, lx, ly);
+      }
 
     });
 
@@ -2362,6 +2382,40 @@ ${threeJsSrc}
           } else {
             mapDragStart = null;
           }
+          // Hover detection: raycast to find which scene node laser is near
+          const oldHovered = mapHoveredSceneId;
+          mapHoveredSceneId = null;
+          if (controller1) {
+            const tempRay = new THREE.Raycaster();
+            tempRay.ray.origin.setFromMatrixPosition(controller1.matrixWorld);
+            const fwd = new THREE.Vector3(0, 0, -1).applyMatrix4(
+              new THREE.Matrix4().extractRotation(controller1.matrixWorld)
+            );
+            tempRay.ray.direction.copy(fwd);
+            const hits = tempRay.intersectObject(vrMinimapMesh);
+            if (hits.length > 0) {
+              const uv = hits[0].uv;
+              const mW = vrMinimapCanvas.width, mH = vrMinimapCanvas.height;
+              let hmx = uv.x * mW, hmy = (1 - uv.y) * mH;
+              if (mapZoom > 1) {
+                hmx = (hmx - mW / 2 - mapPanX) / mapZoom + mW / 2;
+                hmy = (hmy - mH / 2 - mapPanY) / mapZoom + mH / 2;
+              }
+              const hpad = Math.max(40, mW * 0.04);
+              const hpos = getScenePositions(mW, mH, hpad);
+              const hNodeScale = Math.max(1, mW / 512) * 0.8;
+              const hHitR = 40 * hNodeScale;
+              for (const sc of getScenesForFloor(getCurrentFloorId())) {
+                const hp = hpos[sc.id];
+                if (hp && Math.sqrt((hmx - hp.x) ** 2 + (hmy - hp.y) ** 2) < hHitR) {
+                  mapHoveredSceneId = sc.id;
+                  break;
+                }
+              }
+            }
+          }
+          if (mapHoveredSceneId !== oldHovered) mapNeedsRedraw = true;
+
           if (mapNeedsRedraw) {
             mapNeedsRedraw = false;
             drawVRMinimap();
