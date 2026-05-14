@@ -2185,37 +2185,38 @@ ${threeJsSrc}
     return group;
   }
 
-  // Load official Quest 3 controller models via dynamic import
+  // Simple geometric controller models (no CDN import needed)
+  function makeControllerModel() {
+    const group = new THREE.Group();
+    // Grip body
+    const gripGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.14, 12);
+    const gripMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    const gripMesh = new THREE.Mesh(gripGeo, gripMat);
+    gripMesh.rotation.x = Math.PI * 0.4;
+    gripMesh.position.set(0, -0.01, 0.02);
+    group.add(gripMesh);
+    // Orange tracking ring
+    const ringGeo = new THREE.TorusGeometry(0.022, 0.004, 8, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff7a00 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI * 0.9;
+    ring.position.set(0, 0.02, -0.02);
+    group.add(ring);
+    // Trigger
+    const trigGeo = new THREE.BoxGeometry(0.008, 0.025, 0.015);
+    const trigMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const trig = new THREE.Mesh(trigGeo, trigMat);
+    trig.position.set(0, -0.02, -0.01);
+    trig.rotation.x = 0.3;
+    group.add(trig);
+    return group;
+  }
   const grip1 = renderer.xr.getControllerGrip(0);
+  grip1.add(makeControllerModel());
   scene.add(grip1);
   const grip2 = renderer.xr.getControllerGrip(1);
+  grip2.add(makeControllerModel());
   scene.add(grip2);
-
-  import('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js').then(module => {
-    const factory = new module.XRControllerModelFactory();
-    grip1.add(factory.createControllerModel(grip1));
-    grip2.add(factory.createControllerModel(grip2));
-  }).catch(err => {
-    // Fallback: simple geometric controller if import fails
-    function makeControllerModel() {
-      const group = new THREE.Group();
-      const gripGeo = new THREE.CylinderGeometry(0.015, 0.018, 0.12, 12);
-      const gripMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
-      const grip = new THREE.Mesh(gripGeo, gripMat);
-      grip.rotation.x = Math.PI * 0.4;
-      grip.position.set(0, -0.01, 0.02);
-      group.add(grip);
-      const ringGeo = new THREE.TorusGeometry(0.017, 0.003, 8, 24);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0xff7a00 });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.rotation.x = Math.PI * 0.9;
-      ring.position.set(0, 0.01, -0.01);
-      group.add(ring);
-      return group;
-    }
-    grip1.add(makeControllerModel());
-    grip2.add(makeControllerModel());
-  });
 
   const controller1 = renderer.xr.getController(0);
   controller1.add(makeControllerRay());
