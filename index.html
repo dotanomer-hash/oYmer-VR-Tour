@@ -2308,14 +2308,25 @@ ${threeJsSrc}
   let gazeTarget = null;
   let gazeTimer = 0;
   let gazeGrace = 0;
+  let gazeCooldown = 0;
   const GAZE_DWELL = 2.0;
   const GAZE_GRACE = 0;
+  const GAZE_COOLDOWN = 1.5;
   let lastFrameTime = performance.now();
 
   function updateGaze() {
     const now = performance.now();
     const dt = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
+
+    // Cooldown after scene navigation — prevent immediate re-trigger
+    if (gazeCooldown > 0) {
+      gazeCooldown -= dt;
+      gazeFillMesh.visible = false;
+      gazeTarget = null;
+      gazeTimer = 0;
+      return;
+    }
 
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
@@ -2410,6 +2421,7 @@ ${threeJsSrc}
         gazeTarget = null;
         gazeTimer = 0;
         gazeGrace = 0;
+        gazeCooldown = GAZE_COOLDOWN;
         gazeFillMesh.visible = false;
       }
     } else {
