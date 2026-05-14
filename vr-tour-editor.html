@@ -1261,7 +1261,7 @@ ${threeJsSrc}
   renderer.domElement.id = 'viewer-canvas';
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 1, 1100);
+  const camera = new THREE.PerspectiveCamera(65, window.innerWidth/window.innerHeight, 0.01, 1100);
 
   const geo = new THREE.SphereGeometry(500, 64, 32);
   geo.scale(-1, 1, 1);
