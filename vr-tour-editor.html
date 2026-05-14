@@ -2208,20 +2208,15 @@ ${threeJsSrc}
     group.add(tip);
     return group;
   }
-  const grip1 = renderer.xr.getControllerGrip(0);
-  grip1.add(makeControllerModel());
-  scene.add(grip1);
-  const grip2 = renderer.xr.getControllerGrip(1);
-  grip2.add(makeControllerModel());
-  scene.add(grip2);
-
   const controller1 = renderer.xr.getController(0);
   controller1.add(makeControllerRay());
+  controller1.add(makeControllerModel());
   controller1.addEventListener('select', onVRSelect);
   scene.add(controller1);
 
   const controller2 = renderer.xr.getController(1);
   controller2.add(makeControllerRay());
+  controller2.add(makeControllerModel());
   controller2.addEventListener('select', onVRSelect);
   scene.add(controller2);
 
