@@ -2308,8 +2308,8 @@ ${threeJsSrc}
   let gazeTarget = null;
   let gazeTimer = 0;
   let gazeGrace = 0;
-  const GAZE_DWELL = 1.4;
-  const GAZE_GRACE = 0.6;
+  const GAZE_DWELL = 1.8;
+  const GAZE_GRACE = 0.15;
   let lastFrameTime = performance.now();
 
   function updateGaze() {
@@ -2361,10 +2361,9 @@ ${threeJsSrc}
     const hsHit = hits.find(h => h.object.userData && h.object.userData.type);
     let hitTarget = hsHit ? hsHit.object : null;
 
-    // Grace period: keep target alive briefly when ray wanders off
+    // Grace period: keep target alive briefly when ray wanders off (but do NOT advance timer)
     if (!hitTarget && gazeTarget && gazeGrace < GAZE_GRACE) {
       gazeGrace += dt;
-      gazeTimer += dt * 0.3;
       hitTarget = gazeTarget;
     } else if (hitTarget) {
       gazeGrace = 0;
