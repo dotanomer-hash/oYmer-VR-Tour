@@ -2185,30 +2185,27 @@ ${threeJsSrc}
     return group;
   }
 
-  // Simple geometric controller models (no CDN import needed)
+  // Visible geometric controller models
   function makeControllerModel() {
     const group = new THREE.Group();
-    // Grip body
-    const gripGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.14, 12);
-    const gripMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
+    // Grip body - light gray so visible in dark panoramas
+    const gripGeo = new THREE.BoxGeometry(0.04, 0.03, 0.15);
+    const gripMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
     const gripMesh = new THREE.Mesh(gripGeo, gripMat);
-    gripMesh.rotation.x = Math.PI * 0.4;
-    gripMesh.position.set(0, -0.01, 0.02);
+    gripMesh.position.set(0, 0, 0.05);
     group.add(gripMesh);
-    // Orange tracking ring
-    const ringGeo = new THREE.TorusGeometry(0.022, 0.004, 8, 24);
+    // Orange front ring
+    const ringGeo = new THREE.TorusGeometry(0.025, 0.005, 8, 24);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xff7a00 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI * 0.9;
-    ring.position.set(0, 0.02, -0.02);
+    ring.position.set(0, 0.01, -0.02);
     group.add(ring);
-    // Trigger
-    const trigGeo = new THREE.BoxGeometry(0.008, 0.025, 0.015);
-    const trigMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
-    const trig = new THREE.Mesh(trigGeo, trigMat);
-    trig.position.set(0, -0.02, -0.01);
-    trig.rotation.x = 0.3;
-    group.add(trig);
+    // White tip so you can see where it points
+    const tipGeo = new THREE.SphereGeometry(0.008, 8, 8);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const tip = new THREE.Mesh(tipGeo, tipMat);
+    tip.position.set(0, 0, -0.03);
+    group.add(tip);
     return group;
   }
   const grip1 = renderer.xr.getControllerGrip(0);
