@@ -5,76 +5,403 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>oYmer VR Tour Editor</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+:root {
+  --neon-orange: #ff7a00;
+  --neon-cyan: #00f0ff;
+  --neon-magenta: #ff2d95;
+  --neon-yellow: #fcee09;
+  --bg-dark: #0a0a12;
+  --bg-panel: #0d0d1f;
+  --bg-input: #12122a;
+  --border-dim: #1a1a3a;
+  --border-glow: rgba(0,240,255,0.25);
+  --text-primary: #e8e8f0;
+  --text-dim: #6a6a8a;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
-/* Toolbar */
-#toolbar { height: 48px; background: #16213e; display: flex; align-items: center; padding: 0 16px; gap: 12px; border-bottom: 1px solid #333; z-index: 100; }
-#toolbar .brand { font-size: 18px; font-weight: 700; color: #ff7a00; margin-right: 24px; }
-#toolbar button { background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
-#toolbar button:hover { background: #ff7a00; color: #fff; }
+body {
+  font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-/* Main layout */
+/* === NEON GLOW UTILITIES === */
+@keyframes neonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+@keyframes borderGlow {
+  0%, 100% { border-color: var(--neon-cyan); box-shadow: 0 0 5px rgba(0,240,255,0.3); }
+  50% { border-color: var(--neon-magenta); box-shadow: 0 0 5px rgba(255,45,149,0.3); }
+}
+
+/* === TOOLBAR === */
+#toolbar {
+  height: 52px;
+  background: linear-gradient(180deg, #13132d 0%, #0a0a1a 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--neon-cyan);
+  box-shadow: 0 2px 20px rgba(0,240,255,0.15), inset 0 -1px 0 rgba(0,240,255,0.1);
+  z-index: 100;
+  position: relative;
+}
+#toolbar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--neon-cyan), var(--neon-orange), var(--neon-magenta), transparent);
+}
+#toolbar .brand {
+  font-family: 'Orbitron', monospace;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--neon-orange);
+  margin-right: 24px;
+  text-shadow: 0 0 10px rgba(255,122,0,0.6), 0 0 30px rgba(255,122,0,0.3);
+  letter-spacing: 2px;
+}
+#toolbar button {
+  background: rgba(0,240,255,0.05);
+  border: 1px solid rgba(0,240,255,0.3);
+  color: var(--neon-cyan);
+  padding: 7px 16px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.25s ease;
+  position: relative;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+#toolbar button:hover {
+  background: var(--neon-orange);
+  border-color: var(--neon-orange);
+  color: #000;
+  box-shadow: 0 0 15px rgba(255,122,0,0.5), 0 0 30px rgba(255,122,0,0.2);
+  text-shadow: none;
+}
+
+/* === MAIN LAYOUT === */
 #main { display: flex; flex: 1; overflow: hidden; }
 
-/* Left panel - scenes */
-#scene-panel { width: 180px; background: #0f3460; border-right: 1px solid #333; display: flex; flex-direction: column; overflow: hidden; }
-#scene-panel .panel-header { padding: 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-#scene-panel .panel-header button { background: #ff7a00; border: none; color: #fff; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; }
+/* === LEFT PANEL - SCENES === */
+#scene-panel {
+  width: 240px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, var(--bg-panel) 0%, #080818 100%);
+  border-right: 1px solid var(--border-glow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+/* scene panel edge glow removed to avoid viewport bleed */
+#scene-panel .panel-header {
+  padding: 12px 10px;
+  font-family: 'Orbitron', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 8px rgba(0,240,255,0.4);
+  border-bottom: 1px solid var(--border-glow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#scene-panel .panel-header button {
+  background: var(--neon-orange);
+  border: none;
+  color: #000;
+  width: 26px;
+  height: 26px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 0 10px rgba(255,122,0,0.4);
+  transition: all 0.2s;
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+#scene-panel .panel-header button:hover {
+  box-shadow: 0 0 20px rgba(255,122,0,0.7);
+  transform: scale(1.1);
+}
 #scene-list { flex: 1; overflow-y: auto; padding: 6px; }
-.scene-item { padding: 6px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.scene-item:hover { background: #1a1a4a; }
-.scene-item.active { background: #ff7a00; color: #fff; }
-.scene-item img { width: 36px; height: 20px; object-fit: cover; border-radius: 2px; }
+.scene-item {
+  padding: 7px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  margin-bottom: 3px;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+.scene-item:hover {
+  background: rgba(0,240,255,0.05);
+  border-color: rgba(0,240,255,0.2);
+}
+.scene-item.active {
+  background: linear-gradient(90deg, rgba(255,122,0,0.2), rgba(255,122,0,0.05));
+  border-color: var(--neon-orange);
+  color: var(--neon-orange);
+  box-shadow: 0 0 10px rgba(255,122,0,0.15), inset 0 0 15px rgba(255,122,0,0.05);
+  text-shadow: 0 0 8px rgba(255,122,0,0.4);
+}
+.scene-item img { width: 36px; height: 20px; object-fit: cover; border-radius: 2px; border: 1px solid var(--border-dim); }
 .scene-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scene-item input { background: #1a1a4a; border: 1px solid #ff7a00; color: #fff; font-size: 12px; width: 100%; padding: 2px 4px; border-radius: 2px; }
-.scene-item.drag-over { border-top: 2px solid #ff7a00; }
+.scene-item input {
+  background: var(--bg-input);
+  border: 1px solid var(--neon-orange);
+  color: var(--neon-orange);
+  font-size: 14px;
+  width: 100%;
+  padding: 2px 4px;
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(255,122,0,0.2);
+}
+.scene-item.drag-over { border-top: 2px solid var(--neon-yellow); }
 
-/* Context menu */
-#ctx-menu { position: fixed; background: #1a1a3a; border: 1px solid #444; border-radius: 6px; z-index: 9999; display: none; padding: 4px 0; min-width: 130px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
-#ctx-menu .ctx-item { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #eee; }
-#ctx-menu .ctx-item:hover { background: #ff7a00; color: #fff; }
+/* === CONTEXT MENU === */
+#ctx-menu {
+  position: fixed;
+  background: #12122e;
+  border: 1px solid var(--neon-cyan);
+  border-radius: 2px;
+  z-index: 9999;
+  display: none;
+  padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.7), 0 0 15px rgba(0,240,255,0.2);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+}
+#ctx-menu .ctx-item {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+  transition: all 0.15s;
+}
+#ctx-menu .ctx-item:hover {
+  background: linear-gradient(90deg, rgba(255,122,0,0.3), transparent);
+  color: var(--neon-orange);
+  text-shadow: 0 0 8px rgba(255,122,0,0.5);
+}
 
-/* Center viewport */
-#viewport-container { flex: 1; position: relative; background: #0a0a1a; display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+/* === CENTER VIEWPORT === */
+#viewport-container {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--bg-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
 #viewport-container.dragging-hotspot { cursor: grabbing !important; }
 #viewport-container.placing-hotspot { cursor: crosshair !important; }
 #viewport-container.placing-hotspot .hotspot-overlay { pointer-events: none !important; }
 #viewport-container.dragging-hotspot .hotspot-overlay { pointer-events: none !important; }
 #viewport-container canvas { display: block; width: 100%; height: 100%; }
-#empty-state { text-align: center; color: #666; }
-#empty-state h2 { font-size: 20px; margin-bottom: 8px; color: #888; }
-#empty-state p { font-size: 14px; }
+#empty-state { text-align: center; color: var(--text-dim); }
+#empty-state h2 {
+  font-family: 'Orbitron', monospace;
+  font-size: 22px;
+  margin-bottom: 10px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 15px rgba(0,240,255,0.3);
+  letter-spacing: 3px;
+}
+#empty-state p { font-size: 17px; color: var(--text-dim); }
 
-/* Hotspot overlays in editor */
-.hotspot-overlay { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.8); background: rgba(255,122,0,0.4); transform: translate(-50%, -50%); cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 14px; pointer-events: auto; transition: transform 0.15s; outline: 2px solid rgba(255,122,0,0.6); outline-offset: 4px; }
+/* === HOTSPOT OVERLAYS === */
+.hotspot-overlay {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.8);
+  background: rgba(255,122,0,0.35);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  pointer-events: auto;
+  transition: transform 0.15s, box-shadow 0.15s;
+  outline: 2px solid rgba(255,122,0,0.5);
+  outline-offset: 4px;
+  box-shadow: 0 0 12px rgba(255,122,0,0.3);
+}
 .hotspot-overlay:active { cursor: grabbing; }
-.hotspot-overlay:hover { transform: translate(-50%, -50%) scale(1.3); }
-.hotspot-overlay.selected { border-color: #fff; outline-color: #fff; box-shadow: 0 0 12px #ff7a00; }
-.hotspot-overlay.info { background: rgba(90,174,255,0.4); outline-color: rgba(90,174,255,0.6); }
-.hotspot-overlay.media { background: rgba(78,205,196,0.4); outline-color: rgba(78,205,196,0.6); }
-.hotspot-overlay.audio { background: rgba(224,64,251,0.4); outline-color: rgba(224,64,251,0.6); }
-@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+.hotspot-overlay:hover {
+  transform: translate(-50%, -50%) scale(1.3);
+  box-shadow: 0 0 25px rgba(255,122,0,0.5);
+}
+.hotspot-overlay.selected {
+  border-color: var(--neon-yellow);
+  outline-color: var(--neon-yellow);
+  box-shadow: 0 0 20px rgba(252,238,9,0.5), 0 0 40px rgba(252,238,9,0.2);
+}
+.hotspot-overlay.info { background: rgba(0,240,255,0.3); outline-color: rgba(0,240,255,0.5); box-shadow: 0 0 12px rgba(0,240,255,0.3); }
+.hotspot-overlay.media { background: rgba(78,205,196,0.3); outline-color: rgba(78,205,196,0.5); box-shadow: 0 0 12px rgba(78,205,196,0.3); }
+.hotspot-overlay.audio { background: rgba(255,45,149,0.3); outline-color: rgba(255,45,149,0.5); box-shadow: 0 0 12px rgba(255,45,149,0.3); }
 .hotspot-overlay.floor-placement { border-style: dashed; outline-style: dashed; transform: translate(-50%, -50%) perspective(200px) rotateX(55deg); }
 .hotspot-overlay.floor-placement:hover { transform: translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(1.3); }
 
-/* Right panel - properties */
-#props-panel { width: 240px; background: #0f3460; border-left: 1px solid #333; display: flex; flex-direction: column; overflow-y: auto; }
-#props-panel .panel-header { padding: 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid #333; }
-#props-empty { padding: 20px; text-align: center; color: #666; font-size: 13px; }
+/* === RIGHT PANEL - PROPERTIES === */
+#props-panel {
+  width: 245px;
+  min-width: 245px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, var(--bg-panel) 0%, #080818 100%);
+  border-left: 1px solid var(--border-glow);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+}
+#props-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--neon-yellow), transparent 30%, transparent 70%, var(--neon-cyan));
+  z-index: 1;
+}
+#props-panel .panel-header {
+  padding: 12px 10px;
+  font-family: 'Orbitron', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--neon-yellow);
+  text-shadow: 0 0 8px rgba(252,238,9,0.4);
+  border-bottom: 1px solid rgba(252,238,9,0.2);
+}
+#props-empty { padding: 20px; text-align: center; color: var(--text-dim); font-size: 16px; }
 #props-content { padding: 10px; display: none; }
-#props-content label { display: block; font-size: 11px; color: #aaa; margin-top: 10px; margin-bottom: 4px; }
-#props-content input[type="text"], #props-content textarea, #props-content select { width: 100%; background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+#props-content label {
+  display: block;
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-top: 12px;
+  margin-bottom: 5px;
+  text-shadow: 0 0 5px rgba(0,240,255,0.3);
+}
+#props-content input[type="text"], #props-content textarea, #props-content select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  border-radius: 2px;
+  font-size: 14px;
+  font-family: 'Rajdhani', sans-serif;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#props-content input[type="text"]:focus, #props-content textarea:focus, #props-content select:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 8px rgba(0,240,255,0.2);
+  outline: none;
+}
 #props-content textarea { resize: vertical; min-height: 60px; }
 
-/* Type buttons */
+/* === TYPE BUTTONS === */
 .type-buttons { display: flex; gap: 4px; margin-top: 6px; }
-.type-buttons button { flex: 1; padding: 6px 4px; border: 1px solid #333; background: #1a1a4a; color: #eee; border-radius: 4px; cursor: pointer; font-size: 11px; }
-.type-buttons button.active-nav { background: #ff7a00; border-color: #ff7a00; color: #fff; }
-.type-buttons button.active-info { background: #5aaeff; border-color: #5aaeff; color: #fff; }
-.type-buttons button.active-media { background: #4ecdc4; border-color: #4ecdc4; color: #fff; }
-.type-buttons button.active-audio { background: #e040fb; border-color: #e040fb; color: #fff; }
-.placement-buttons button.active-placement { background: #8855cc; border-color: #8855cc; color: #fff; }
+.type-buttons button {
+  flex: 1;
+  padding: 7px 4px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s;
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+.type-buttons button:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+.type-buttons button.active-nav {
+  background: linear-gradient(135deg, rgba(255,122,0,0.3), rgba(255,122,0,0.1));
+  border-color: var(--neon-orange);
+  color: var(--neon-orange);
+  box-shadow: 0 0 10px rgba(255,122,0,0.3);
+  text-shadow: 0 0 5px rgba(255,122,0,0.5);
+}
+.type-buttons button.active-info {
+  background: linear-gradient(135deg, rgba(0,240,255,0.3), rgba(0,240,255,0.1));
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0,240,255,0.3);
+  text-shadow: 0 0 5px rgba(0,240,255,0.5);
+}
+.type-buttons button.active-media {
+  background: linear-gradient(135deg, rgba(78,205,196,0.3), rgba(78,205,196,0.1));
+  border-color: #4ecdc4;
+  color: #4ecdc4;
+  box-shadow: 0 0 10px rgba(78,205,196,0.3);
+  text-shadow: 0 0 5px rgba(78,205,196,0.5);
+}
+.type-buttons button.active-audio {
+  background: linear-gradient(135deg, rgba(255,45,149,0.3), rgba(255,45,149,0.1));
+  border-color: var(--neon-magenta);
+  color: var(--neon-magenta);
+  box-shadow: 0 0 10px rgba(255,45,149,0.3);
+  text-shadow: 0 0 5px rgba(255,45,149,0.5);
+}
+.placement-buttons button.active-placement {
+  background: linear-gradient(135deg, rgba(252,238,9,0.25), rgba(252,238,9,0.05));
+  border-color: var(--neon-yellow);
+  color: var(--neon-yellow);
+  box-shadow: 0 0 10px rgba(252,238,9,0.3);
+  text-shadow: 0 0 5px rgba(252,238,9,0.5);
+}
 
 /* Icon picker */
 
@@ -82,41 +409,175 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .cond-field { display: none; }
 .cond-field.visible { display: block; }
 
-/* Delete button */
-#delete-hotspot { margin-top: 16px; width: 100%; padding: 8px; background: #c0392b; border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
-#delete-hotspot:hover { background: #e74c3c; }
+/* === DELETE BUTTON === */
+#delete-hotspot {
+  margin-top: 16px;
+  width: 100%;
+  padding: 9px;
+  background: linear-gradient(90deg, rgba(255,45,149,0.15), rgba(255,45,149,0.05));
+  border: 1px solid var(--neon-magenta);
+  color: var(--neon-magenta);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+#delete-hotspot:hover {
+  background: var(--neon-magenta);
+  color: #000;
+  box-shadow: 0 0 20px rgba(255,45,149,0.5);
+}
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #0a0a1a; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+/* === SCROLLBAR === */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-dark); }
+::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 2px; box-shadow: 0 0 4px rgba(0,240,255,0.3); }
+::-webkit-scrollbar-thumb:hover { background: var(--neon-orange); }
 
-/* Floor Plan Modal */
-#floorplan-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; z-index: 5000; align-items: center; justify-content: center; }
+/* === FLOOR PLAN MODAL === */
+#floorplan-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; z-index: 5000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
 #floorplan-modal.open { display: flex; }
-#floorplan-editor { background: #16213e; border: 1px solid #444; border-radius: 10px; width: 80vw; max-width: 900px; height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
-#floorplan-header { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #333; }
-#floorplan-header h3 { color: #ff7a00; margin: 0; font-size: 16px; }
-#floorplan-header button { background: #1a1a4a; border: 1px solid #333; color: #eee; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-#floorplan-header button:hover { background: #ff7a00; }
+#floorplan-editor {
+  background: linear-gradient(135deg, #0d0d25 0%, #0a0a18 100%);
+  border: 1px solid var(--neon-cyan);
+  border-radius: 2px;
+  width: 80vw;
+  max-width: 900px;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0,240,255,0.15), 0 0 80px rgba(0,240,255,0.05);
+}
+#floorplan-header {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0,240,255,0.2);
+  background: linear-gradient(90deg, rgba(0,240,255,0.03), transparent);
+}
+#floorplan-header h3 {
+  font-family: 'Orbitron', monospace;
+  color: var(--neon-orange);
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(255,122,0,0.4);
+}
+#floorplan-header button {
+  background: rgba(0,240,255,0.05);
+  border: 1px solid rgba(0,240,255,0.3);
+  color: var(--neon-cyan);
+  padding: 6px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+#floorplan-header button:hover {
+  background: var(--neon-orange);
+  border-color: var(--neon-orange);
+  color: #000;
+  box-shadow: 0 0 12px rgba(255,122,0,0.4);
+}
 #floorplan-body { flex: 1; position: relative; overflow: hidden; }
 #floorplan-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
-#floorplan-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); color: #aaa; font-size: 12px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 4px; }
+#floorplan-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--neon-cyan);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  background: rgba(0,0,0,0.7);
+  padding: 6px 16px;
+  border-radius: 2px;
+  border: 1px solid rgba(0,240,255,0.2);
+  text-shadow: 0 0 5px rgba(0,240,255,0.3);
+  letter-spacing: 0.5px;
+}
 
-/* Floor tabs in floor plan modal */
-#floor-tabs-bar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-bottom: 1px solid #333; background: #0f1b36; flex-wrap: wrap; }
-.floor-tab { padding: 5px 14px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 12px; color: #ccc; background: #1a1a4a; border: 1px solid #333; border-bottom: none; position: relative; user-select: none; }
-.floor-tab:hover { background: #2a2a5a; color: #fff; }
-.floor-tab.active { background: #ff7a00; color: #fff; border-color: #ff7a00; }
-.floor-tab .floor-tab-x { display: none; margin-left: 6px; font-size: 10px; color: rgba(255,255,255,0.6); cursor: pointer; }
+/* === FLOOR TABS === */
+#floor-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0,240,255,0.15);
+  background: rgba(0,0,0,0.3);
+  flex-wrap: wrap;
+}
+.floor-tab {
+  padding: 5px 14px;
+  border-radius: 0;
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  border-bottom: none;
+  position: relative;
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.floor-tab:hover { background: rgba(0,240,255,0.1); color: var(--neon-cyan); border-color: rgba(0,240,255,0.3); }
+.floor-tab.active {
+  background: linear-gradient(135deg, rgba(255,122,0,0.3), rgba(255,122,0,0.1));
+  color: var(--neon-orange);
+  border-color: var(--neon-orange);
+  box-shadow: 0 0 10px rgba(255,122,0,0.2);
+  text-shadow: 0 0 5px rgba(255,122,0,0.5);
+}
+.floor-tab .floor-tab-x { display: none; margin-left: 6px; font-size: 10px; color: rgba(255,255,255,0.4); cursor: pointer; }
 .floor-tab:hover .floor-tab-x { display: inline; }
-.floor-tab .floor-tab-x:hover { color: #fff; }
-#floor-tab-add { padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 14px; color: #ff7a00; background: transparent; border: 1px dashed #ff7a00; line-height: 1; }
-#floor-tab-add:hover { background: rgba(255,122,0,0.2); }
+.floor-tab .floor-tab-x:hover { color: var(--neon-magenta); text-shadow: 0 0 5px rgba(255,45,149,0.5); }
+#floor-tab-add {
+  padding: 5px 10px;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--neon-cyan);
+  background: transparent;
+  border: 1px dashed rgba(0,240,255,0.4);
+  line-height: 1;
+  transition: all 0.2s;
+}
+#floor-tab-add:hover { background: rgba(0,240,255,0.1); border-color: var(--neon-cyan); box-shadow: 0 0 8px rgba(0,240,255,0.2); }
 
-/* Floor select in scene list */
-.scene-floor-select { width: 100%; background: #1a1a4a; border: 1px solid #333; color: #aaa; font-size: 10px; padding: 1px 2px; border-radius: 2px; margin-top: 2px; cursor: pointer; }
-.scene-floor-select:focus { border-color: #ff7a00; color: #eee; outline: none; }
+/* === FLOOR SELECT IN SCENE LIST === */
+.scene-floor-select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  color: var(--text-dim);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  padding: 1px 2px;
+  border-radius: 2px;
+  margin-top: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.scene-floor-select:focus { border-color: var(--neon-cyan); color: var(--text-primary); outline: none; box-shadow: 0 0 5px rgba(0,240,255,0.2); }
+
 </style>
 </head>
 <body>
@@ -127,7 +588,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <button id="btn-load">Load Project</button>
   <button id="btn-save">Save Project</button>
   <button id="btn-export">Export Tour</button>
-  <button id="btn-floorplan" style="margin-left:auto">🗺 Floor Plan</button>
+  <button id="btn-floorplan">🗺 Floor Plan</button>
+  <button id="btn-exit" style="margin-left:auto;border-color:rgba(255,45,149,0.4);color:#ff2d95">✕ Exit Project</button>
 </div>
 
 <!-- Main layout -->
@@ -150,8 +612,8 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <div id="props-panel">
     <div class="panel-header">Hotspot Properties</div>
     <div id="props-empty">
-      <button id="btn-add-hotspot" style="width:100%;padding:10px;font-size:14px;background:#ff7a00;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:8px">+ Add Hotspot</button>
-      <small style="color:#888">Drag existing hotspots to move them.</small>
+      <button id="btn-add-hotspot" style="width:100%;padding:11px;font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;background:linear-gradient(90deg,rgba(255,122,0,0.25),rgba(255,122,0,0.1));color:#ff7a00;border:1px solid #ff7a00;border-radius:2px;cursor:pointer;margin-bottom:8px;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);transition:all 0.2s;box-shadow:0 0 12px rgba(255,122,0,0.2)">+ Add Hotspot</button>
+      <small style="color:#6a6a8a;font-family:'Rajdhani',sans-serif;letter-spacing:0.5px">Drag existing hotspots to move them.</small>
     </div>
     <div id="props-content">
       <label>Type</label>
@@ -187,9 +649,10 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
       <div class="cond-field" id="field-image">
         <label>Image</label>
-        <input type="file" id="hs-image-upload" accept="image/*">
+        <input type="file" id="hs-image-upload" accept="image/*" style="display:none">
+        <button onclick="document.getElementById('hs-image-upload').click()" style="width:100%;padding:6px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border:1px solid rgba(0,240,255,0.3);background:rgba(0,240,255,0.05);color:#00f0ff;transition:all 0.2s;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)">📁 Choose Image</button>
         <img id="hs-image-preview" style="max-width:100%;margin-top:6px;border-radius:4px;display:none">
-        <button id="hs-image-clear" style="display:none;margin-top:4px;background:#c00;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Remove Image</button>
+        <button id="hs-image-clear" style="display:none;margin-top:4px;background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95;padding:4px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;transition:all 0.2s">Remove Image</button>
       </div>
       <div class="cond-field" id="field-video">
         <label>Video URL</label>
@@ -202,24 +665,38 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 
       <div class="cond-field" id="field-audio">
         <label>Audio</label>
-        <div style="display:flex;gap:6px;margin-bottom:6px">
-          <input type="file" id="hs-audio-upload" accept="audio/*" style="flex:1;min-width:0">
-          <button id="hs-audio-record" style="padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid #e040fb;background:#1a1a4a;color:#e040fb;white-space:nowrap">⏺ Record</button>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input type="file" id="hs-audio-upload" accept="audio/*" style="display:none">
+          <button onclick="document.getElementById('hs-audio-upload').click()" style="flex:1;padding:5px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border:1px solid rgba(0,240,255,0.3);background:rgba(0,240,255,0.05);color:#00f0ff;transition:all 0.2s;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)">📁 Load File</button>
+          <button id="hs-audio-record" style="padding:5px 12px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border:1px solid #ff2d95;background:linear-gradient(90deg,rgba(255,45,149,0.1),rgba(255,45,149,0.03));color:#ff2d95;white-space:nowrap;transition:all 0.2s;box-shadow:0 0 6px rgba(255,45,149,0.15);clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)">⏺ Record</button>
         </div>
-        <div id="hs-audio-recording" style="display:none;margin-bottom:6px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="color:#f44;font-size:18px;animation:blink 1s infinite">⏺</span>
-            <span id="hs-audio-timer" style="color:#eee;font-size:13px;font-family:monospace">0:00</span>
-            <button id="hs-audio-stop" style="padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid #4caf50;background:#1a1a4a;color:#4caf50">⏹ Stop</button>
+        <div id="hs-audio-recording" style="display:none;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:10px;background:#12122a;border:1px solid rgba(255,45,149,0.3);border-radius:2px;padding:8px 10px">
+            <span style="color:#ff2d95;font-size:16px;animation:blink 1s infinite">⏺</span>
+            <span id="hs-audio-timer" style="color:#00f0ff;font-size:14px;font-family:'Orbitron',monospace;letter-spacing:1px;text-shadow:0 0 6px rgba(0,240,255,0.4)">0:00</span>
+            <button id="hs-audio-stop" style="margin-left:auto;padding:5px 12px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border:1px solid #00f0ff;background:linear-gradient(90deg,rgba(0,240,255,0.1),rgba(0,240,255,0.03));color:#00f0ff;transition:all 0.2s;box-shadow:0 0 6px rgba(0,240,255,0.15)">⏹ Stop</button>
           </div>
         </div>
-        <div id="hs-audio-preview" style="display:none;margin-bottom:6px">
-          <audio id="hs-audio-player" controls style="width:100%;height:32px"></audio>
+        <div id="hs-audio-preview" style="display:none;margin-bottom:8px">
+          <audio id="hs-audio-player"></audio>
+          <div id="cyber-player" style="background:#0a0a18;border:1px solid rgba(0,240,255,0.25);border-radius:2px;padding:8px 10px;display:flex;align-items:center;gap:8px;position:relative;overflow:hidden">
+            <div style="position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#00f0ff,#ff7a00,transparent);opacity:0.5"></div>
+            <button id="cyber-play-btn" style="width:30px;height:30px;border-radius:50%;border:1px solid #00f0ff;background:rgba(0,240,255,0.08);color:#00f0ff;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 0 8px rgba(0,240,255,0.2);flex-shrink:0">▶</button>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0">
+              <div id="cyber-progress-wrap" style="width:100%;height:6px;background:#12122a;border-radius:1px;cursor:pointer;position:relative;border:1px solid rgba(0,240,255,0.1)">
+                <div id="cyber-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00f0ff,#ff7a00);border-radius:1px;transition:width 0.1s;box-shadow:0 0 6px rgba(0,240,255,0.4)"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between">
+                <span id="cyber-time-current" style="font-family:'Orbitron',monospace;font-size:9px;color:#00f0ff;letter-spacing:1px;text-shadow:0 0 4px rgba(0,240,255,0.4)">0:00</span>
+                <span id="cyber-time-total" style="font-family:'Orbitron',monospace;font-size:9px;color:#6a6a8a;letter-spacing:1px">0:00</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="hs-audio-name" style="margin-top:4px;font-size:11px;color:#aaa;display:none"></div>
-        <button id="hs-audio-clear" style="display:none;margin-top:4px;background:#c00;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Remove Audio</button>
-        <label style="margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="hs-audio-autoplay"> Auto-play on scene enter
+        <div id="hs-audio-name" style="margin-top:4px;font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:500;color:#00f0ff;display:none;letter-spacing:0.3px"></div>
+        <button id="hs-audio-clear" style="display:none;margin-top:6px;background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95;padding:5px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;transition:all 0.2s;width:100%;clip-path:polygon(4px 0,100% 0,calc(100% - 4px) 100%,0 100%)">Remove Audio</button>
+        <label style="margin-top:10px;display:flex;align-items:center;gap:8px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:500;color:#6a6a8a;letter-spacing:0.3px">
+          <input type="checkbox" id="hs-audio-autoplay" style="accent-color:#ff7a00"> Auto-play on scene enter
         </label>
       </div>
 
@@ -239,10 +716,46 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
   <div id="floorplan-editor">
     <div id="floorplan-header">
       <h3>Floor Plan</h3>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="fp-help" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:13px;font-weight:900;border:1px solid rgba(252,238,9,0.5);color:#fcee09;background:rgba(252,238,9,0.06);clip-path:none;border-radius:50%;box-shadow:0 0 8px rgba(252,238,9,0.2)">?</button>
         <button id="fp-upload">Upload Image</button>
-        <button id="fp-remove" style="background:#c0392b">Remove</button>
+        <button id="fp-remove" style="background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95">Remove</button>
         <button id="fp-close">Close</button>
+      </div>
+    </div>
+    <!-- Help popup -->
+    <div id="fp-help-popup" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:6000;width:380px;background:linear-gradient(135deg,rgba(10,10,24,0.97),rgba(13,13,35,0.97));border:1px solid rgba(0,240,255,0.4);border-radius:3px;padding:0;box-shadow:0 0 40px rgba(0,240,255,0.15),0 0 80px rgba(0,0,0,0.6);overflow:hidden">
+      <div style="padding:14px 18px 10px;border-bottom:1px solid rgba(0,240,255,0.15);display:flex;align-items:center;justify-content:space-between">
+        <div style="font-family:'Orbitron',monospace;font-size:12px;font-weight:900;color:#00f0ff;text-shadow:0 0 10px rgba(0,240,255,0.5);letter-spacing:2px;text-transform:uppercase">// System Guide</div>
+        <button id="fp-help-close" style="width:22px;height:22px;padding:0;border:1px solid rgba(255,45,149,0.4);background:rgba(255,45,149,0.08);color:#ff2d95;font-size:14px;cursor:pointer;border-radius:2px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;clip-path:none">✕</button>
+      </div>
+      <div style="padding:16px 18px 20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="min-width:32px;height:32px;border:1px solid rgba(255,122,0,0.4);background:rgba(255,122,0,0.08);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:16px">🔗</div>
+          <div>
+            <div style="font-family:'Orbitron',monospace;font-size:9px;font-weight:700;color:#ff7a00;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;text-shadow:0 0 6px rgba(255,122,0,0.3)">Auto-Connect</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:13px;color:#c0c0d0;line-height:1.4">Assigning a <span style="color:#ff7a00;font-weight:600">navigation hotspot</span> between scenes will automatically draw connection lines on the map.</div>
+          </div>
+        </div>
+        <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(0,240,255,0.2),transparent)"></div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="min-width:32px;height:32px;border:1px solid rgba(0,240,255,0.4);background:rgba(0,240,255,0.08);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:16px">◉</div>
+          <div>
+            <div style="font-family:'Orbitron',monospace;font-size:9px;font-weight:700;color:#00f0ff;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;text-shadow:0 0 6px rgba(0,240,255,0.3)">Hotspot Indicators</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:13px;color:#c0c0d0;line-height:1.4">Small colored dots around each marker show all assigned hotspots: <span style="color:#ff7a00">●</span> nav <span style="color:#5aaeff">●</span> info <span style="color:#4ecdc4">●</span> media <span style="color:#e040fb">●</span> audio</div>
+          </div>
+        </div>
+        <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(0,240,255,0.2),transparent)"></div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="min-width:32px;height:32px;border:1px solid rgba(252,238,9,0.4);background:rgba(252,238,9,0.08);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:16px">✋</div>
+          <div>
+            <div style="font-family:'Orbitron',monospace;font-size:9px;font-weight:700;color:#fcee09;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;text-shadow:0 0 6px rgba(252,238,9,0.3)">Drag to Move</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:13px;color:#c0c0d0;line-height:1.4">Click and drag any scene marker to reposition it on the floor plan.</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:8px 18px 12px;border-top:1px solid rgba(0,240,255,0.1)">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:10px;color:#3a3a5a;text-align:center;letter-spacing:1px;text-transform:uppercase">oYmer VR // Floor Plan System v2.0</div>
       </div>
     </div>
     <div id="floor-tabs-bar"></div>
@@ -3071,6 +3584,12 @@ ${threeJsSrc}
   document.getElementById('btn-add-scene').addEventListener('click', () => fileScene.click());
   document.getElementById('btn-save').addEventListener('click', saveProject);
   document.getElementById('btn-load').addEventListener('click', async () => {
+    if (state.scenes.length > 0) {
+      const choice = confirm('You have an open project. Do you want to save it before loading another?\n\nOK = Save first, then load\nCancel = Load without saving');
+      if (choice) {
+        await saveProject();
+      }
+    }
     if (window.showOpenFilePicker) {
       try {
         const [handle] = await window.showOpenFilePicker({
@@ -3087,6 +3606,34 @@ ${threeJsSrc}
     fileLoad.click();
   });
   document.getElementById('btn-export').addEventListener('click', exportTour);
+
+  // Exit Project button
+  document.getElementById('btn-exit').addEventListener('click', async () => {
+    if (state.scenes.length === 0) return;
+    const choice = confirm('Save project before exiting?\n\nOK = Save and exit\nCancel = Exit without saving');
+    if (choice) await saveProject();
+    state.scenes = [];
+    state.floors = [{id: 1, name: 'Ground Floor', level: 0, floorPlanData: null}];
+    state.currentSceneId = null;
+    state.selectedHotspotId = null;
+    state.currentFloorId = 1;
+    state.nextSceneId = 1;
+    state.nextHotspotId = 1;
+    state.nextFloorId = 2;
+    renderSceneList();
+    if (renderer && renderer.domElement) renderer.domElement.style.display = 'none';
+    emptyState.style.display = '';
+    propsEmpty.style.display = 'block';
+    propsContent.style.display = 'none';
+  });
+
+  // Prevent accidental F5 / page close
+  window.addEventListener('beforeunload', (e) => {
+    if (state.scenes.length > 0) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   fileScene.addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
@@ -3280,6 +3827,9 @@ ${threeJsSrc}
     requestAnimationFrame(() => loadFloorPlanImage(() => drawFloorPlan()));
   });
   document.getElementById('fp-close').addEventListener('click', () => fpModal.classList.remove('open'));
+  const fpHelpPopup = document.getElementById('fp-help-popup');
+  document.getElementById('fp-help').addEventListener('click', () => { fpHelpPopup.style.display = fpHelpPopup.style.display === 'none' ? 'block' : 'none'; });
+  document.getElementById('fp-help-close').addEventListener('click', () => { fpHelpPopup.style.display = 'none'; });
   document.getElementById('fp-upload').addEventListener('click', () => fileFloorplan.click());
   document.getElementById('fp-remove').addEventListener('click', () => {
     const floor = getCurrentFloor();
@@ -3381,45 +3931,97 @@ ${threeJsSrc}
 
     fpCanvas._drawArea = { x: drawX, y: drawY, w: drawW, h: drawH };
 
-    // Show unplaced scenes for current floor
+    // Auto-layout unplaced scenes in a circle when no floor plan or single floor
     const unplaced = floorScenes.filter(s => s.planX == null);
-    if (unplaced.length > 0) {
-      fpCtx.fillStyle = 'rgba(0,0,0,0.7)';
-      fpCtx.fillRect(8, 8, 200, 20 + unplaced.length * 22);
-      fpCtx.fillStyle = '#ff7a00';
-      fpCtx.font = 'bold 12px sans-serif';
-      fpCtx.textAlign = 'left';
-      fpCtx.fillText('Click on plan to place:', 14, 24);
-      unplaced.forEach((s, i) => {
-        fpCtx.fillStyle = '#eee';
-        fpCtx.font = '12px sans-serif';
-        fpCtx.fillText('• ' + s.name, 20, 42 + i * 22);
+    const placed = floorScenes.filter(s => s.planX != null);
+    const autoLayout = (!fpImage || state.floors.length <= 1) && unplaced.length > 0;
+    const autoPositions = new Map();
+
+    if (autoLayout && placed.length === 0) {
+      const cx = drawX + drawW / 2, cy = drawY + drawH / 2;
+      const radius = Math.min(drawW, drawH) * 0.35;
+      floorScenes.forEach((s, i) => {
+        const angle = (i / floorScenes.length) * Math.PI * 2 - Math.PI / 2;
+        autoPositions.set(s.id, { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
       });
+    }
+
+    // Show unplaced scenes list (only if some are placed and some aren't)
+    if (unplaced.length > 0 && placed.length > 0) {
+      const listW = 220, listPad = 12, lineH = 22;
+      const listH = listPad * 2 + 18 + unplaced.length * lineH;
+      fpCtx.save();
+      fpCtx.fillStyle = 'rgba(10,10,24,0.85)';
+      fpCtx.strokeStyle = 'rgba(0,240,255,0.3)';
+      fpCtx.lineWidth = 1;
+      fpCtx.beginPath();
+      fpCtx.roundRect(10, 10, listW, listH, 3);
+      fpCtx.fill();
+      fpCtx.stroke();
+      fpCtx.fillStyle = '#00f0ff';
+      fpCtx.font = 'bold 11px Rajdhani, sans-serif';
+      fpCtx.textAlign = 'left';
+      fpCtx.fillText('▸ CLICK ON PLAN TO PLACE:', 10 + listPad, 10 + listPad + 10);
+      unplaced.forEach((s, i) => {
+        fpCtx.fillStyle = 'rgba(255,122,0,0.8)';
+        fpCtx.font = '12px Rajdhani, sans-serif';
+        fpCtx.fillText('◦ ' + s.name, 10 + listPad + 6, 10 + listPad + 28 + i * lineH);
+      });
+      fpCtx.restore();
+    }
+
+    // Helper to get scene position (placed or auto-layout)
+    function getScenePos(s) {
+      if (s.planX != null) return { x: drawX + s.planX * drawW, y: drawY + s.planY * drawH };
+      if (autoPositions.has(s.id)) return autoPositions.get(s.id);
+      return null;
     }
 
     // Draw connections (current floor only)
     fpCtx.lineWidth = 2;
+    let hasNavConnections = false;
     floorScenes.forEach(s => {
-      if (s.planX == null) return;
+      const p1 = getScenePos(s);
+      if (!p1) return;
       s.hotspots.forEach(hs => {
         if (hs.type !== 'nav' || !hs.target) return;
         const ts = floorScenes.find(t => t.id === parseInt(hs.target));
-        if (!ts || ts.planX == null) return;
-        const x1 = drawX + s.planX * drawW, y1 = drawY + s.planY * drawH;
-        const x2 = drawX + ts.planX * drawW, y2 = drawY + ts.planY * drawH;
+        if (!ts) return;
+        const p2 = getScenePos(ts);
+        if (!p2) return;
+        hasNavConnections = true;
         fpCtx.strokeStyle = 'rgba(255,122,0,0.5)';
         fpCtx.beginPath();
-        fpCtx.moveTo(x1, y1);
-        fpCtx.lineTo(x2, y2);
+        fpCtx.moveTo(p1.x, p1.y);
+        fpCtx.lineTo(p2.x, p2.y);
         fpCtx.stroke();
       });
     });
 
+    // Default sequential route when no nav connections exist
+    if (!hasNavConnections && floorScenes.length > 1) {
+      fpCtx.lineWidth = 1.5;
+      fpCtx.setLineDash([6, 4]);
+      for (let i = 0; i < floorScenes.length - 1; i++) {
+        const p1 = getScenePos(floorScenes[i]);
+        const p2 = getScenePos(floorScenes[i + 1]);
+        if (!p1 || !p2) continue;
+        fpCtx.strokeStyle = 'rgba(0,240,255,0.35)';
+        fpCtx.beginPath();
+        fpCtx.moveTo(p1.x, p1.y);
+        fpCtx.lineTo(p2.x, p2.y);
+        fpCtx.stroke();
+      }
+      fpCtx.setLineDash([]);
+      fpCtx.lineWidth = 2;
+    }
+
     // Draw scene markers (current floor only)
     floorScenes.forEach(s => {
-      if (s.planX == null) return;
-      const px = drawX + s.planX * drawW;
-      const py = drawY + s.planY * drawH;
+      const pos = getScenePos(s);
+      if (!pos) return;
+      const px = pos.x;
+      const py = pos.y;
       const isCurrent = s.id === state.currentSceneId;
       const r = isCurrent ? 16 : 12;
 
@@ -3444,13 +4046,50 @@ ${threeJsSrc}
         fpCtx.fill();
       });
 
-      // Label
-      fpCtx.fillStyle = '#fff';
-      fpCtx.font = (isCurrent ? 'bold ' : '') + '12px sans-serif';
-      fpCtx.textAlign = 'center';
-      fpCtx.fillText(s.name, px, py + r + 16);
+      // Label — only show for hovered or current scene
+      if (s.id === fpHoveredSceneId || isCurrent) {
+        fpCtx.save();
+        const label = s.name;
+        fpCtx.font = (isCurrent ? 'bold ' : '') + '12px Rajdhani, sans-serif';
+        const tw = fpCtx.measureText(label).width;
+        const lx = px - tw / 2 - 6, ly = py + r + 6;
+        fpCtx.fillStyle = 'rgba(10,10,24,0.85)';
+        fpCtx.strokeStyle = isCurrent ? 'rgba(255,122,0,0.5)' : 'rgba(0,240,255,0.4)';
+        fpCtx.lineWidth = 1;
+        fpCtx.beginPath();
+        fpCtx.roundRect(lx, ly, tw + 12, 20, 2);
+        fpCtx.fill();
+        fpCtx.stroke();
+        fpCtx.fillStyle = isCurrent ? '#ff7a00' : '#00f0ff';
+        fpCtx.textAlign = 'center';
+        fpCtx.fillText(label, px, ly + 14);
+        fpCtx.restore();
+      }
     });
   }
+
+  // Floor plan hover tracking
+  let fpHoveredSceneId = null;
+  fpCanvas.addEventListener('mousemove', (e) => {
+    if (!fpCanvas._drawArea) return;
+    const rect = fpCanvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (fpCanvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (fpCanvas.height / rect.height);
+    const da = fpCanvas._drawArea;
+    const floorScenes = getScenesForCurrentFloor();
+    let found = null;
+    for (const s of floorScenes) {
+      let px, py;
+      if (s.planX != null) { px = da.x + s.planX * da.w; py = da.y + s.planY * da.h; }
+      else continue;
+      const dist = Math.sqrt((mx - px) ** 2 + (my - py) ** 2);
+      if (dist < 20) { found = s.id; break; }
+    }
+    if (found !== fpHoveredSceneId) {
+      fpHoveredSceneId = found;
+      drawFloorPlan();
+    }
+  });
 
   // Drag scene markers on floor plan (current floor only)
   fpCanvas.addEventListener('mousedown', (e) => {
@@ -3509,6 +4148,40 @@ ${threeJsSrc}
     onResize();
   }
 })();
+
+
+// Custom cyber audio player
+(function() {
+  const audio = document.getElementById('hs-audio-player');
+  const playBtn = document.getElementById('cyber-play-btn');
+  const bar = document.getElementById('cyber-progress-bar');
+  const wrap = document.getElementById('cyber-progress-wrap');
+  const curTime = document.getElementById('cyber-time-current');
+  const totTime = document.getElementById('cyber-time-total');
+  if (!audio || !playBtn) return;
+  function fmt(s) { s = Math.floor(s); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
+  playBtn.addEventListener('click', function() {
+    if (audio.paused) { audio.play(); playBtn.textContent = '⏸'; playBtn.style.borderColor = '#ff7a00'; playBtn.style.color = '#ff7a00'; playBtn.style.boxShadow = '0 0 10px rgba(255,122,0,0.3)'; }
+    else { audio.pause(); playBtn.textContent = '▶'; playBtn.style.borderColor = '#00f0ff'; playBtn.style.color = '#00f0ff'; playBtn.style.boxShadow = '0 0 8px rgba(0,240,255,0.2)'; }
+  });
+  audio.addEventListener('timeupdate', function() {
+    if (!audio.duration) return;
+    bar.style.width = (audio.currentTime / audio.duration * 100) + '%';
+    curTime.textContent = fmt(audio.currentTime);
+  });
+  audio.addEventListener('loadedmetadata', function() { totTime.textContent = fmt(audio.duration); });
+  audio.addEventListener('ended', function() { playBtn.textContent = '▶'; playBtn.style.borderColor = '#00f0ff'; playBtn.style.color = '#00f0ff'; playBtn.style.boxShadow = '0 0 8px rgba(0,240,255,0.2)'; });
+  wrap.addEventListener('click', function(e) {
+    if (!audio.duration) return;
+    var r = wrap.getBoundingClientRect();
+    audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
+  });
+  var origSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+  if (origSrc && origSrc.set) {
+    audio.addEventListener('loadstart', function() { playBtn.textContent = '▶'; playBtn.style.borderColor = '#00f0ff'; playBtn.style.color = '#00f0ff'; bar.style.width = '0%'; curTime.textContent = '0:00'; totTime.textContent = '0:00'; });
+  }
+})();
+
 </script>
 </body>
 </html>
