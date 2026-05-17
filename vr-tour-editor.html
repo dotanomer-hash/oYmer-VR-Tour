@@ -153,30 +153,36 @@ body {
 }
 #scene-list { flex: 1; overflow-y: auto; padding: 6px; }
 .scene-item {
-  padding: 7px 6px;
-  border-radius: 2px;
+  position: relative;
+  padding: 0;
+  border-radius: 3px;
   cursor: pointer;
   margin-bottom: 3px;
   font-size: 14px;
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid transparent;
+  display: block;
+  border: 2px solid transparent;
   transition: all 0.2s;
+  overflow: hidden;
 }
 .scene-item:hover {
-  background: rgba(0,240,255,0.05);
-  border-color: rgba(0,240,255,0.2);
+  border-color: rgba(0,240,255,0.4);
 }
 .scene-item.active {
-  background: linear-gradient(90deg, rgba(255,122,0,0.2), rgba(255,122,0,0.05));
   border-color: var(--neon-orange);
-  color: var(--neon-orange);
-  box-shadow: 0 0 10px rgba(255,122,0,0.15), inset 0 0 15px rgba(255,122,0,0.05);
-  text-shadow: 0 0 8px rgba(255,122,0,0.4);
+  box-shadow: 0 0 10px rgba(255,122,0,0.3);
 }
-.scene-item img { width: 36px; height: 20px; object-fit: cover; border-radius: 2px; border: 1px solid var(--border-dim); }
+.scene-item .scene-thumb-wrap { position: relative; width: 100%; }
+.scene-item img { width: 100%; aspect-ratio: 3/2; object-fit: cover; display: block; }
+.scene-item .scene-name-overlay {
+  position: absolute; top: 0; left: 24px; right: 0;
+  background: linear-gradient(rgba(0,0,0,0.85), transparent);
+  color: #fff; font-size: 14px; font-weight: 600;
+  padding: 4px 6px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transition: opacity 0.2s;
+}
+.scene-item:hover .scene-name-overlay { opacity: 1; }
+.scene-item.active .scene-name-overlay { opacity: 1; color: var(--neon-orange); }
 .scene-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scene-item input {
   background: var(--bg-input);
@@ -203,7 +209,8 @@ body {
   box-shadow: 0 4px 30px rgba(0,0,0,0.7), 0 0 15px rgba(0,240,255,0.2);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
 }
-#ctx-menu .ctx-item {
+#ctx-menu .ctx-item,
+#floor-ctx-menu .ctx-item {
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 600;
@@ -212,7 +219,8 @@ body {
   letter-spacing: 0.5px;
   transition: all 0.15s;
 }
-#ctx-menu .ctx-item:hover {
+#ctx-menu .ctx-item:hover,
+#floor-ctx-menu .ctx-item:hover {
   background: linear-gradient(90deg, rgba(255,122,0,0.3), transparent);
   color: var(--neon-orange);
   text-shadow: 0 0 8px rgba(255,122,0,0.5);
@@ -546,9 +554,7 @@ body {
   box-shadow: 0 0 10px rgba(255,122,0,0.2);
   text-shadow: 0 0 5px rgba(255,122,0,0.5);
 }
-.floor-tab .floor-tab-x { display: none; margin-left: 6px; font-size: 10px; color: rgba(255,255,255,0.4); cursor: pointer; }
-.floor-tab:hover .floor-tab-x { display: inline; }
-.floor-tab .floor-tab-x:hover { color: var(--neon-magenta); text-shadow: 0 0 5px rgba(255,45,149,0.5); }
+.floor-tab .floor-tab-x { display: none !important; }
 #floor-tab-add {
   padding: 5px 10px;
   border-radius: 0;
@@ -705,10 +711,16 @@ body {
   </div>
 </div>
 
-<!-- Context menu -->
+<!-- Context menu (scenes) -->
 <div id="ctx-menu">
   <div class="ctx-item" id="ctx-rename">Rename</div>
+  <div class="ctx-item" id="ctx-replace">Replace Image</div>
   <div class="ctx-item" id="ctx-delete">Delete</div>
+</div>
+<!-- Context menu (floors) -->
+<div id="floor-ctx-menu" style="position:fixed;background:#12122e;border:1px solid var(--neon-cyan);border-radius:2px;z-index:9999;display:none;padding:4px 0;min-width:140px;box-shadow:0 4px 30px rgba(0,0,0,0.7),0 0 15px rgba(0,240,255,0.2)">
+  <div class="ctx-item" id="floor-ctx-rename">Rename</div>
+  <div class="ctx-item" id="floor-ctx-delete" style="color:#ff2d95">Delete Floor</div>
 </div>
 
 <!-- Floor Plan Modal -->
@@ -719,7 +731,7 @@ body {
       <div style="display:flex;gap:8px;align-items:center">
         <button id="fp-help" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:13px;font-weight:900;border:1px solid rgba(252,238,9,0.5);color:#fcee09;background:rgba(252,238,9,0.06);clip-path:none;border-radius:50%;box-shadow:0 0 8px rgba(252,238,9,0.2)">?</button>
         <button id="fp-upload">Upload Image</button>
-        <button id="fp-remove" style="background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95">Remove</button>
+        <button id="fp-remove" style="background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95">Remove Image</button>
         <button id="fp-close">Close</button>
       </div>
     </div>
@@ -886,15 +898,18 @@ body {
   }
 
   // === Panorama Loading ===
-  function loadPanorama(imageData, isStereo) {
+  function loadPanorama(imageData, stereoType) {
     const tex = new THREE.TextureLoader().load(imageData, () => {
       tex.colorSpace = THREE.SRGBColorSpace;
     });
     tex.colorSpace = THREE.SRGBColorSpace;
-    // For stereo over-under: show only top half in flat mode (editor)
-    if (isStereo) {
+    // In editor (flat mode), show only left-eye portion
+    if (stereoType === 'ou') {
       tex.repeat.set(1, 0.5);
       tex.offset.set(0, 0.5);
+    } else if (stereoType === 'sbs') {
+      tex.repeat.set(0.5, 1);
+      tex.offset.set(0, 0);
     } else {
       tex.repeat.set(1, 1);
       tex.offset.set(0, 0);
@@ -1335,12 +1350,14 @@ body {
   }
 
   // === Scene Management ===
-  function addScene(imageData, name, isStereo) {
+  function addScene(imageData, name, stereoType) {
+    const maxOrder = state.scenes.reduce((m, s) => Math.max(m, s.order || 0), 0);
     const scn = {
       id: state.nextSceneId++,
       name: name || 'Scene ' + state.scenes.length + 1,
       imageData: imageData,
-      isStereo: isStereo || false,
+      stereoType: stereoType || 'none',
+      order: maxOrder + 1,
       floorId: state.currentFloorId || (state.floors[0] && state.floors[0].id) || 1,
       planX: null,
       planY: null,
@@ -1355,7 +1372,7 @@ body {
     state.currentSceneId = id;
     deselectHotspot();
     const scn = getCurrentScene();
-    if (scn) loadPanorama(scn.imageData, scn.isStereo);
+    if (scn) loadPanorama(scn.imageData, scn.stereoType || (scn.isStereo ? 'ou' : 'none'));
     renderSceneList();
   }
 
@@ -1363,29 +1380,34 @@ body {
 
   function renderSceneList() {
     sceneListEl.innerHTML = '';
-    state.scenes.forEach((scn, idx) => {
+    const sorted = [...state.scenes].sort((a, b) => (a.order || 999) - (b.order || 999));
+    sorted.forEach((scn, idx) => {
       const div = document.createElement('div');
       div.className = 'scene-item' + (scn.id === state.currentSceneId ? ' active' : '');
       div.draggable = true;
       div.dataset.sceneId = scn.id;
       div.dataset.sceneIdx = idx;
-      div.style.flexWrap = 'wrap';
 
+      const thumbWrap = document.createElement('div');
+      thumbWrap.className = 'scene-thumb-wrap';
       const img = document.createElement('img');
       img.src = scn.imageData;
-      div.appendChild(img);
+      thumbWrap.appendChild(img);
 
-      const textWrap = document.createElement('div');
-      textWrap.style.cssText = 'flex:1;min-width:0;';
-      const span = document.createElement('span');
-      span.style.cssText = 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      span.textContent = scn.name;
-      textWrap.appendChild(span);
+      const orderLabel = document.createElement('span');
+      orderLabel.textContent = scn.order || 1;
+      orderLabel.style.cssText = 'position:absolute;top:0;left:0;background:rgba(0,0,0,0.7);color:var(--neon-cyan);font-size:15px;font-weight:700;padding:1px 5px;line-height:1.3;border-radius:0 0 3px 0;user-select:none;z-index:1;';
+      thumbWrap.appendChild(orderLabel);
 
-      // Floor dropdown
+      const nameOverlay = document.createElement('div');
+      nameOverlay.className = 'scene-name-overlay';
+      nameOverlay.textContent = scn.name;
+      thumbWrap.appendChild(nameOverlay);
+
       if (state.floors.length > 1) {
         const floorSel = document.createElement('select');
         floorSel.className = 'scene-floor-select';
+        floorSel.style.cssText = 'position:absolute;bottom:2px;right:2px;font-size:11px;padding:1px 2px;background:rgba(0,0,0,0.7);color:var(--neon-cyan);border:1px solid rgba(0,240,255,0.3);border-radius:2px;z-index:1;cursor:pointer;';
         state.floors.forEach(f => {
           const opt = document.createElement('option');
           opt.value = f.id;
@@ -1396,14 +1418,17 @@ body {
         floorSel.addEventListener('change', (e) => {
           e.stopPropagation();
           scn.floorId = parseInt(e.target.value);
-          // Reset plan position when moving to a different floor
           scn.planX = null;
           scn.planY = null;
         });
         floorSel.addEventListener('click', (e) => e.stopPropagation());
-        textWrap.appendChild(floorSel);
+        thumbWrap.appendChild(floorSel);
       }
-      div.appendChild(textWrap);
+      div.appendChild(thumbWrap);
+      const span = document.createElement('span');
+      span.style.display = 'none';
+      span.textContent = scn.name;
+      div.appendChild(span);
 
       div.addEventListener('click', () => selectScene(scn.id));
       div.addEventListener('dblclick', () => inlineRenameScene(div, span, scn));
@@ -1425,11 +1450,13 @@ body {
         e.preventDefault();
         div.classList.remove('drag-over');
         if (draggedSceneId == null || draggedSceneId === scn.id) return;
+        state.scenes.sort((a, b) => (a.order || 0) - (b.order || 0));
         const fromIdx = state.scenes.findIndex(s => s.id === draggedSceneId);
         const toIdx = state.scenes.findIndex(s => s.id === scn.id);
         if (fromIdx < 0 || toIdx < 0) return;
         const [moved] = state.scenes.splice(fromIdx, 1);
         state.scenes.splice(toIdx, 0, moved);
+        state.scenes.forEach((s, i) => { s.order = i + 1; });
         draggedSceneId = null;
         renderSceneList();
       });
@@ -1474,10 +1501,14 @@ body {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
           const ratio = img.width / img.height;
-          // Stereo over-under: aspect ratio ~1:1 means stereo, ~2:1 means mono
-          const isStereo = ratio < 1.5;
+          // Detect stereo layout from aspect ratio:
+          // ~1:1 (0.9–1.1) = over/under stereo, ~4:1 (3.8–4.2) = side-by-side stereo
+          // Everything else (including 2:1 mono equirect) = mono
+          let stereoType = 'none';
+          if (ratio >= 0.9 && ratio <= 1.1) stereoType = 'ou';
+          else if (ratio >= 3.8 && ratio <= 4.2) stereoType = 'sbs';
           const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
-          resolve({ dataUrl, isStereo });
+          resolve({ dataUrl, stereoType });
         };
         img.src = e.target.result;
       };
@@ -1537,10 +1568,12 @@ body {
         state.nextFloorId = 2;
       }
 
-      // Ensure every scene has a floorId
+      // Ensure every scene has a floorId, stereoType, and order
       const firstFloorId = state.floors[0].id;
-      state.scenes.forEach(s => {
+      state.scenes.forEach((s, i) => {
         if (!s.floorId) s.floorId = firstFloorId;
+        if (!s.stereoType) s.stereoType = s.isStereo ? 'ou' : 'none';
+        if (!s.order) s.order = state.scenes.length - i;
       });
 
       state.currentFloorId = firstFloorId;
@@ -1568,7 +1601,8 @@ body {
         id: s.id,
         name: s.name,
         imageData: s.imageData,
-        isStereo: s.isStereo || false,
+        stereoType: s.stereoType || (s.isStereo ? 'ou' : 'none'),
+        order: s.order || 1,
         floorId: s.floorId || (state.floors[0] && state.floors[0].id) || 1,
         planX: s.planX,
         planY: s.planY,
@@ -1579,7 +1613,7 @@ body {
         }))
       })),
       floors: state.floors.map(f => ({ id: f.id, name: f.name, level: f.level, floorPlanData: f.floorPlanData })),
-      startSceneId: state.scenes[0].id
+      startSceneId: [...state.scenes].sort((a, b) => (a.order || 0) - (b.order || 0))[0].id
     };
 
     // Use cached Three.js source or fetch on demand
@@ -1664,7 +1698,8 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #logo { position: fixed; top: 12px; right: 16px; font-size: 22px; font-weight: 900; color: #ff7a00; z-index: 1000; pointer-events: none; text-shadow: 0 0 8px rgba(255,122,0,0.5); }
 
 /* Sidebar */
-#sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: rgba(10,10,26,0.9); border-right: 1px solid #333; z-index: 900; transform: translateX(-200px); transition: transform 0.3s; }
+#sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: rgba(10,10,26,0.9); border-right: 1px solid #333; z-index: 900; transform: translateX(-200px); transition: transform 0.3s; display: flex; flex-direction: column; }
+#nav-list { flex: 1; overflow-y: auto; }
 #sidebar.open { transform: translateX(0); }
 #sidebar-toggle { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 56px; background: rgba(10,10,26,0.8); border: 1px solid #333; border-radius: 0 6px 6px 0; color: #eee; cursor: pointer; z-index: 901; font-size: 14px; display: flex; align-items: center; justify-content: center; }
 #sidebar.open ~ #sidebar-toggle { left: 200px; }
@@ -1940,20 +1975,29 @@ ${threeJsSrc}
     });
   }
 
-  let currentStereo = false;
+  let currentStereo = 'none';
   sphere.onBeforeRender = function(rend, sc, cam) {
-    if (!currentStereo || !mat.map) return;
+    if (currentStereo === 'none' || !mat.map) return;
     if (rend.xr.isPresenting) {
       const xrCams = rend.xr.getCamera().cameras;
       if (xrCams && xrCams.length === 2) {
-        if (cam === xrCams[0]) {
-          mat.map.offset.set(0, 0.5);
-        } else if (cam === xrCams[1]) {
-          mat.map.offset.set(0, 0);
+        const isLeft = (cam === xrCams[0]);
+        if (currentStereo === 'ou') {
+          mat.map.repeat.set(1, 0.5);
+          mat.map.offset.set(0, isLeft ? 0.5 : 0);
+        } else if (currentStereo === 'sbs') {
+          mat.map.repeat.set(0.5, 1);
+          mat.map.offset.set(isLeft ? 0 : 0.5, 0);
         }
       }
     } else {
-      mat.map.offset.set(0, 0.5);
+      if (currentStereo === 'ou') {
+        mat.map.repeat.set(1, 0.5);
+        mat.map.offset.set(0, 0.5);
+      } else if (currentStereo === 'sbs') {
+        mat.map.repeat.set(0.5, 1);
+        mat.map.offset.set(0, 0);
+      }
     }
   };
 
@@ -2289,15 +2333,21 @@ ${threeJsSrc}
     if (!s) return;
     const oldFloorId = currentFloorId;
     currentSceneId = id;
-    currentStereo = s.isStereo || false;
+    currentStereo = s.stereoType || (s.isStereo ? 'ou' : 'none');
     currentFloorId = getCurrentFloorId();
 
     const tex = texCache[id] || new THREE.TextureLoader().load(s.imageData);
     texCache[id] = tex;
     tex.colorSpace = THREE.SRGBColorSpace;
-    if (s.isStereo) {
+    if (currentStereo === 'ou') {
       tex.repeat.set(1, 0.5);
       tex.offset.set(0, 0.5);
+    } else if (currentStereo === 'sbs') {
+      tex.repeat.set(0.5, 1);
+      tex.offset.set(0, 0);
+    } else {
+      tex.repeat.set(1, 1);
+      tex.offset.set(0, 0);
     }
     mat.map = tex;
     mat.needsUpdate = true;
@@ -3640,7 +3690,7 @@ ${threeJsSrc}
     if (!files.length) return;
     for (const file of files) {
       const result = await processImage(file);
-      addScene(result.dataUrl, file.name.replace(/\.[^.]+$/, ''), result.isStereo);
+      addScene(result.dataUrl, file.name.replace(/\.[^.]+$/, ''), result.stereoType);
     }
     fileScene.value = '';
   });
@@ -3705,6 +3755,73 @@ ${threeJsSrc}
         emptyState.style.display = 'block';
       }
     }
+    renderSceneList();
+  });
+
+  document.getElementById('ctx-replace').addEventListener('click', () => {
+    if (!ctxTargetScene) return;
+    const scn = ctxTargetScene;
+    hideContextMenu();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const result = await processImage(file);
+      scn.imageData = result.dataUrl;
+      scn.stereoType = result.stereoType;
+      if (state.currentSceneId === scn.id) {
+        loadPanorama(scn.imageData, scn.stereoType);
+      }
+      renderSceneList();
+    };
+    input.click();
+  });
+
+  // === Floor Context Menu ===
+  const floorCtxMenu = document.getElementById('floor-ctx-menu');
+  let floorCtxTarget = null;
+
+  function showFloorContextMenu(x, y, floor) {
+    floorCtxTarget = floor;
+    floorCtxMenu.style.left = x + 'px';
+    floorCtxMenu.style.top = y + 'px';
+    floorCtxMenu.style.display = 'block';
+    const delItem = document.getElementById('floor-ctx-delete');
+    delItem.style.display = state.floors.length > 1 ? '' : 'none';
+  }
+
+  function hideFloorContextMenu() {
+    floorCtxMenu.style.display = 'none';
+    floorCtxTarget = null;
+  }
+
+  document.addEventListener('click', hideFloorContextMenu);
+
+  document.getElementById('floor-ctx-rename').addEventListener('click', () => {
+    if (!floorCtxTarget) return;
+    const f = floorCtxTarget;
+    hideFloorContextMenu();
+    const newName = prompt('Rename floor:', f.name);
+    if (newName && newName.trim()) {
+      f.name = newName.trim();
+      renderFloorTabs();
+      renderSceneList();
+    }
+  });
+
+  document.getElementById('floor-ctx-delete').addEventListener('click', () => {
+    if (!floorCtxTarget) return;
+    const f = floorCtxTarget;
+    hideFloorContextMenu();
+    if (!confirm('Delete floor "' + f.name + '"? Its scenes will be moved to "' + state.floors[0].name + '".')) return;
+    const firstFloorId = state.floors[0].id === f.id ? state.floors[1].id : state.floors[0].id;
+    state.scenes.forEach(s => { if (s.floorId === f.id) { s.floorId = firstFloorId; s.planX = null; s.planY = null; } });
+    state.floors = state.floors.filter(fl => fl.id !== f.id);
+    if (state.currentFloorId === f.id) state.currentFloorId = firstFloorId;
+    renderFloorTabs();
+    loadFloorPlanImage(() => drawFloorPlan());
     renderSceneList();
   });
 
@@ -3788,7 +3905,6 @@ ${threeJsSrc}
         loadFloorPlanImage(() => drawFloorPlan());
       });
 
-      // Double-click to rename floor
       tab.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         const newName = prompt('Rename floor:', f.name);
@@ -3797,6 +3913,12 @@ ${threeJsSrc}
           renderFloorTabs();
           renderSceneList();
         }
+      });
+
+      tab.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showFloorContextMenu(e.clientX, e.clientY, f);
       });
 
       bar.appendChild(tab);
