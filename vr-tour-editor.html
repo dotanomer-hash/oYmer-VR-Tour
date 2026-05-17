@@ -661,7 +661,12 @@ body {
         <button id="hs-image-clear" style="display:none;margin-top:4px;background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95;padding:4px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;transition:all 0.2s">Remove Image</button>
       </div>
       <div class="cond-field" id="field-video">
-        <label>Video URL</label>
+        <label>Video</label>
+        <input type="file" id="hs-video-upload" accept="video/*" style="display:none">
+        <button onclick="document.getElementById('hs-video-upload').click()" style="width:100%;padding:6px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border:1px solid rgba(0,240,255,0.3);background:rgba(0,240,255,0.05);color:#00f0ff;transition:all 0.2s;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%);margin-bottom:6px">📁 Upload Video</button>
+        <div id="hs-video-name" style="font-family:'Rajdhani',sans-serif;font-size:11px;color:#00f0ff;display:none;margin-bottom:6px"></div>
+        <button id="hs-video-clear" style="display:none;margin-bottom:8px;background:linear-gradient(90deg,rgba(255,45,149,0.15),rgba(255,45,149,0.05));color:#ff2d95;border:1px solid #ff2d95;padding:4px 10px;border-radius:2px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;transition:all 0.2s;width:100%">Remove Video</button>
+        <label style="font-size:11px;color:#6a6a8a;margin-bottom:4px;display:block">Or paste URL (YouTube, etc.)</label>
         <input type="text" id="hs-video-url" placeholder="https://...">
       </div>
       <div class="cond-field" id="field-link">
@@ -1057,6 +1062,7 @@ body {
       infoTitle: '',
       infoBody: '',
       videoUrl: '',
+      videoData: null,
       linkUrl: '',
       imageData: null,
       audioData: null,
@@ -1174,6 +1180,17 @@ body {
     document.getElementById('hs-info-title').value = hs.infoTitle || '';
     document.getElementById('hs-info-body').value = hs.infoBody || '';
     document.getElementById('hs-video-url').value = hs.videoUrl || '';
+    const videoName = document.getElementById('hs-video-name');
+    const videoClear = document.getElementById('hs-video-clear');
+    if (hs.videoData) {
+      videoName.textContent = '🎬 ' + (hs.videoFileName || 'Video loaded');
+      videoName.style.display = 'block';
+      videoClear.style.display = 'block';
+    } else {
+      videoName.style.display = 'none';
+      videoClear.style.display = 'none';
+    }
+    document.getElementById('hs-video-upload').value = '';
     document.getElementById('hs-link-url').value = hs.linkUrl || '';
 
     // Audio fields
@@ -1243,6 +1260,23 @@ body {
     document.getElementById('hs-video-url').addEventListener('input', (e) => {
       const hs = getSelectedHotspot();
       if (hs) hs.videoUrl = e.target.value;
+    });
+
+    document.getElementById('hs-video-upload').addEventListener('change', (e) => {
+      const hs = getSelectedHotspot();
+      if (!hs || !e.target.files[0]) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        hs.videoData = ev.target.result;
+        hs.videoFileName = e.target.files[0].name;
+        populateProps(hs);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+
+    document.getElementById('hs-video-clear').addEventListener('click', () => {
+      const hs = getSelectedHotspot();
+      if (hs) { hs.videoData = null; hs.videoFileName = null; populateProps(hs); }
     });
 
     document.getElementById('hs-link-url').addEventListener('input', (e) => {
@@ -1608,7 +1642,7 @@ body {
         planY: s.planY,
         hotspots: s.hotspots.map(h => ({
           id: h.id, lon: h.lon, lat: h.lat, type: h.type, placement: h.placement || 'wall', label: h.label, icon: h.icon,
-          target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, linkUrl: h.linkUrl, imageData: h.imageData || null,
+          target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, videoData: h.videoData || null, linkUrl: h.linkUrl, imageData: h.imageData || null,
           audioData: h.audioData || null, audioAutoplay: h.audioAutoplay || false
         }))
       })),
@@ -1698,14 +1732,23 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #logo { position: fixed; top: 12px; right: 16px; font-size: 22px; font-weight: 900; color: #ff7a00; z-index: 1000; pointer-events: none; text-shadow: 0 0 8px rgba(255,122,0,0.5); }
 
 /* Sidebar */
-#sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: rgba(10,10,26,0.9); border-right: 1px solid #333; z-index: 900; transform: translateX(-200px); transition: transform 0.3s; display: flex; flex-direction: column; }
-#nav-list { flex: 1; overflow-y: auto; }
+#sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 220px; background: rgba(10,10,26,0.95); border-right: 1px solid rgba(0,240,255,0.2); z-index: 900; transform: translateX(-220px); transition: transform 0.3s; display: flex; flex-direction: column; }
+#nav-list { flex: 1; overflow-y: auto; padding: 6px; }
+#nav-list::-webkit-scrollbar { width: 6px; }
+#nav-list::-webkit-scrollbar-track { background: transparent; }
+#nav-list::-webkit-scrollbar-thumb { background: rgba(0,240,255,0.3); border-radius: 3px; }
+#nav-list::-webkit-scrollbar-thumb:hover { background: rgba(0,240,255,0.5); }
 #sidebar.open { transform: translateX(0); }
-#sidebar-toggle { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 56px; background: rgba(10,10,26,0.8); border: 1px solid #333; border-radius: 0 6px 6px 0; color: #eee; cursor: pointer; z-index: 901; font-size: 14px; display: flex; align-items: center; justify-content: center; }
-#sidebar.open ~ #sidebar-toggle { left: 200px; }
-.nav-item { padding: 12px 16px; color: #eee; cursor: pointer; font-size: 13px; border-bottom: 1px solid #222; }
-.nav-item:hover { background: #1a1a4a; }
-.nav-item.active { border-left: 3px solid #ff7a00; background: #1a1a4a; }
+#sidebar-toggle { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 56px; background: rgba(10,10,26,0.8); border: 1px solid rgba(0,240,255,0.3); border-radius: 0 6px 6px 0; color: #eee; cursor: pointer; z-index: 901; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+#sidebar.open ~ #sidebar-toggle { left: 220px; }
+.nav-item { position: relative; border-radius: 3px; cursor: pointer; margin-bottom: 4px; overflow: hidden; border: 2px solid transparent; transition: all 0.2s; }
+.nav-item img { width: 100%; aspect-ratio: 3/2; object-fit: cover; display: block; }
+.nav-item .nav-order { position: absolute; top: 0; left: 0; background: rgba(0,0,0,0.7); color: #00f0ff; font-size: 13px; font-weight: 700; padding: 1px 5px; line-height: 1.3; border-radius: 0 0 3px 0; z-index: 1; }
+.nav-item .nav-name { position: absolute; top: 0; left: 22px; right: 0; background: linear-gradient(rgba(0,0,0,0.8), transparent); color: #fff; font-size: 13px; font-weight: 600; padding: 3px 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s; }
+.nav-item:hover .nav-name { opacity: 1; }
+.nav-item.active .nav-name { opacity: 1; color: #ff7a00; }
+.nav-item:hover { border-color: rgba(0,240,255,0.4); }
+.nav-item.active { border-color: #ff7a00; box-shadow: 0 0 10px rgba(255,122,0,0.3); }
 
 /* Hotspots — inner circle + outer ring (Kuula style) */
 .viewer-hotspot { position: absolute; width: 32px; height: 32px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; pointer-events: auto; animation: pulse 2s infinite; transition: transform 0.2s; outline-offset: 5px; outline-style: solid; outline-width: 2px; }
@@ -1731,7 +1774,9 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 /* Info modal */
 #info-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1100; }
 #info-modal.open { display: flex; }
-#info-box { background: #16213e; border: 1px solid #333; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; color: #eee; }
+#info-box { background: rgba(10,15,30,0.95); border: 1px solid rgba(255,122,0,0.4); border-radius: 10px; padding: 24px; max-width: 90vw; width: auto; min-width: 280px; color: #eee; box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 20px rgba(255,122,0,0.15); }
+#info-box video, #info-box iframe { display: block; max-width: 85vw; max-height: 80vh; margin: 0 auto; border-radius: 8px; }
+#info-box img { display: block; margin: 0 auto; }
 #info-box h3 { margin-bottom: 12px; color: #ff7a00; }
 #info-box p { font-size: 14px; line-height: 1.6; }
 #info-close { margin-top: 16px; background: #ff7a00; border: none; color: #fff; padding: 8px 20px; border-radius: 4px; cursor: pointer; }
@@ -2015,10 +2060,21 @@ ${threeJsSrc}
   function buildNav() {
     const list = document.getElementById('nav-list');
     list.innerHTML = '';
-    TOUR.scenes.forEach(s => {
+    const sorted = [...TOUR.scenes].sort((a, b) => (a.order || 999) - (b.order || 999));
+    sorted.forEach((s, i) => {
       const d = document.createElement('div');
       d.className = 'nav-item' + (s.id === currentSceneId ? ' active' : '');
-      d.textContent = s.name;
+      const img = document.createElement('img');
+      img.src = s.imageData;
+      d.appendChild(img);
+      const order = document.createElement('span');
+      order.className = 'nav-order';
+      order.textContent = s.order || (i + 1);
+      d.appendChild(order);
+      const name = document.createElement('span');
+      name.className = 'nav-name';
+      name.textContent = s.name;
+      d.appendChild(name);
       d.onclick = () => goToScene(s.id);
       list.appendChild(d);
     });
@@ -2103,9 +2159,21 @@ ${threeJsSrc}
     const hasFloor = scenes.some(s => s.planX !== null && s.planX !== undefined);
 
     if (hasFloor) {
+      let drawX = 0, drawY = 0, drawW = W, drawH = H;
+      if (minimapFloorImg && minimapFloorImg.naturalWidth) {
+        const imgAspect = minimapFloorImg.naturalWidth / minimapFloorImg.naturalHeight;
+        const canAspect = W / H;
+        if (imgAspect > canAspect) {
+          drawW = W; drawH = W / imgAspect;
+          drawX = 0; drawY = (H - drawH) / 2;
+        } else {
+          drawH = H; drawW = H * imgAspect;
+          drawX = (W - drawW) / 2; drawY = 0;
+        }
+      }
       scenes.forEach(s => {
         if (s.planX !== null && s.planX !== undefined) {
-          positions[s.id] = { x: pad + s.planX * (W - pad * 2), y: pad + s.planY * (H - pad * 2) };
+          positions[s.id] = { x: drawX + s.planX * drawW, y: drawY + s.planY * drawH };
         } else {
           positions[s.id] = { x: W / 2, y: H / 2 };
         }
@@ -2173,45 +2241,53 @@ ${threeJsSrc}
       });
     });
 
-    // Scene nodes
+    // Scene nodes — scale for small minimap, fixed for enlarged
+    const ms = flatMinimapEnlarged ? 1 : Math.max(0.5, W / 500);
     scenes.forEach(s => {
       const p = positions[s.id];
       if (!p) return;
       const isCurrent = s.id === currentSceneId;
-      const r = (isCurrent ? 12 : 9) * scale;
+      const isHovered = s.id === minimapHoveredId;
+      const r = (isCurrent ? 16 : 12) * ms;
 
-      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 12 * scale; }
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 16 * ms; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255, 160, 50, 0.6)';
       ctx.fill();
       ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = (isCurrent ? 2 : 1) * scale;
+      ctx.lineWidth = (isCurrent ? 2 : 1) * ms;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Nav hotspot dots only
+      // Nav hotspot dots
       const navHs = s.hotspots.filter(h => h.type === 'nav');
       navHs.forEach((hs, hi) => {
         const a = (hi / navHs.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(p.x + (r + 6 * scale) * Math.cos(a), p.y + (r + 6 * scale) * Math.sin(a), 2.5 * scale, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff7a00';
+        ctx.arc(p.x + (r + 8 * ms) * Math.cos(a), p.y + (r + 8 * ms) * Math.sin(a), 4 * ms, 0, Math.PI * 2);
+        ctx.fillStyle = hs.type === 'nav' ? '#ff7a00' : '#5aaeff';
         ctx.fill();
       });
 
-      // Short name inside circle (black text)
-      ctx.fillStyle = isCurrent ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)';
-      ctx.font = 'bold ' + Math.round(Math.min(r, 8 * scale)) + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(s.name.substring(0, 3), p.x, p.y);
-      ctx.textBaseline = 'alphabetic';
-      if (flatMinimapEnlarged) {
-        ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255,255,255,0.8)';
-        ctx.font = Math.round(11 * scale) + 'px sans-serif';
+      // Label — only for current or hovered, only when enlarged
+      if (flatMinimapEnlarged && (isCurrent || isHovered)) {
+        ctx.save();
+        const label = s.name;
+        ctx.font = (isCurrent ? 'bold ' : '') + '12px sans-serif';
+        const tw = ctx.measureText(label).width;
+        const lx = p.x - tw / 2 - 6, ly = p.y + r + 6;
+        ctx.fillStyle = 'rgba(10,10,24,0.85)';
+        ctx.strokeStyle = isCurrent ? 'rgba(255,122,0,0.5)' : 'rgba(0,240,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(lx, ly, tw + 12, 20, 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = isCurrent ? '#ff7a00' : '#00f0ff';
         ctx.textAlign = 'center';
-        ctx.fillText(s.name, p.x, p.y + r + 14 * scale);
+        ctx.fillText(label, p.x, ly + 14);
+        ctx.restore();
       }
     });
 
@@ -2228,8 +2304,30 @@ ${threeJsSrc}
 
   }
 
-  // Flat minimap: small = preview only, click to enlarge
+  // Flat minimap: hover tracking + click to enlarge
+  let minimapHoveredId = null;
   const minimapContainer = document.getElementById('minimap-container');
+
+  document.getElementById('minimap').addEventListener('mousemove', (e) => {
+    if (!flatMinimapEnlarged) return;
+    const cvs = document.getElementById('minimap');
+    const rect = cvs.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (cvs.width / rect.width);
+    const my = (e.clientY - rect.top) * (cvs.height / rect.height);
+    const fid = flatMapViewFloorId || getCurrentFloorId();
+    const pad = 40;
+    const positions = getScenePositions(cvs.width, cvs.height, pad, fid);
+    const floorScenes = getScenesForFloor(fid);
+    let found = null;
+    for (const s of floorScenes) {
+      const p = positions[s.id];
+      if (p && Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2) < 30) { found = s.id; break; }
+    }
+    if (found !== minimapHoveredId) { minimapHoveredId = found; drawMinimap(); }
+  });
+  document.getElementById('minimap').addEventListener('mouseleave', () => {
+    if (minimapHoveredId) { minimapHoveredId = null; drawMinimap(); }
+  });
 
   function enlargeFlatMinimap() {
     flatMinimapEnlarged = true;
@@ -2354,45 +2452,70 @@ ${threeJsSrc}
 
     // If floor changed, reload the floor plan image
     if (currentFloorId !== oldFloorId) {
-      loadFloorPlanImage();
-      if (minimapFloorImg && !minimapFloorImg.complete) {
-        minimapFloorImg.onload = function() {
-          // Update VR minimap canvas dimensions for new floor plan
-          mapAspect = this.naturalHeight / this.naturalWidth;
-          mapCanvasW = Math.min(this.naturalWidth, 4096);
-          mapCanvasH = Math.round(mapCanvasW * mapAspect);
-          if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-          vrMinimapCanvas.width = mapCanvasW;
-          vrMinimapCanvas.height = mapCanvasH;
-          const sz = getSmallPlaneSize();
-          if (!vrMinimapActive) {
+      if (vrMinimapActive) {
+        // VR map is active and manages its own floor display — only update mapViewFloorId
+        mapViewFloorId = currentFloorId;
+        // Reload the image for the new current floor
+        const newFloor = TOUR.floors.find(f => f.id === currentFloorId);
+        const fpData = newFloor ? newFloor.floorPlanData : null;
+        if (fpData) {
+          minimapFloorImg = new Image();
+          minimapFloorImg.onload = function() {
+            mapAspect = this.naturalHeight / this.naturalWidth;
+            mapCanvasW = Math.min(this.naturalWidth, 4096);
+            mapCanvasH = Math.round(mapCanvasW * mapAspect);
+            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+            vrMinimapCanvas.width = mapCanvasW;
+            vrMinimapCanvas.height = mapCanvasH;
+            let bigW, bigH;
+            if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
+            else { bigH = 7; bigW = bigH / mapAspect; }
+            vrMinimapMesh.geometry.dispose();
+            vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
+            mapImageReady = true;
+            drawVRMinimap();
+            vrMinimapTex.needsUpdate = true;
+          };
+          minimapFloorImg.src = fpData;
+        } else {
+          minimapFloorImg = null;
+          mapImageReady = false;
+          drawVRMinimap();
+        }
+      } else {
+        loadFloorPlanImage();
+        if (minimapFloorImg && !minimapFloorImg.complete) {
+          minimapFloorImg.onload = function() {
+            mapAspect = this.naturalHeight / this.naturalWidth;
+            mapCanvasW = Math.min(this.naturalWidth, 4096);
+            mapCanvasH = Math.round(mapCanvasW * mapAspect);
+            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+            vrMinimapCanvas.width = mapCanvasW;
+            vrMinimapCanvas.height = mapCanvasH;
+            const sz = getSmallPlaneSize();
             vrMinimapMesh.geometry.dispose();
             vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
-          }
-          mapImageReady = true;
-          drawMinimap();
-          drawVRMinimap();
-          vrMinimapTex.needsUpdate = true;
-        };
-      } else {
-        // No image or already loaded — update canvas dimensions
-        if (minimapFloorImg && minimapFloorImg.naturalWidth) {
-          mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
-          mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
-          mapCanvasH = Math.round(mapCanvasW * mapAspect);
-          if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-          vrMinimapCanvas.width = mapCanvasW;
-          vrMinimapCanvas.height = mapCanvasH;
+            mapImageReady = true;
+            drawMinimap();
+            drawVRMinimap();
+            vrMinimapTex.needsUpdate = true;
+          };
         } else {
-          // Reset to default aspect when no floor plan
-          mapAspect = 0.754;
-          mapCanvasW = 2048;
-          mapCanvasH = Math.round(2048 * mapAspect);
-          vrMinimapCanvas.width = mapCanvasW;
-          vrMinimapCanvas.height = mapCanvasH;
-        }
-        const sz = getSmallPlaneSize();
-        if (!vrMinimapActive) {
+          if (minimapFloorImg && minimapFloorImg.naturalWidth) {
+            mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
+            mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
+            mapCanvasH = Math.round(mapCanvasW * mapAspect);
+            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+            vrMinimapCanvas.width = mapCanvasW;
+            vrMinimapCanvas.height = mapCanvasH;
+          } else {
+            mapAspect = 0.754;
+            mapCanvasW = 2048;
+            mapCanvasH = Math.round(2048 * mapAspect);
+            vrMinimapCanvas.width = mapCanvasW;
+            vrMinimapCanvas.height = mapCanvasH;
+          }
+          const sz = getSmallPlaneSize();
           vrMinimapMesh.geometry.dispose();
           vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
         }
@@ -2502,10 +2625,12 @@ ${threeJsSrc}
       el.innerHTML = mainIcon + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
-      hsElements.push({ el: el, lat: hs.lat, lon: hs.lon });
+      hsElements.push({ el: el, lat: hs.lat, lon: hs.lon, isFloor: hs.placement === 'floor' });
     });
   }
   function updateHotspots() {
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
     hsElements.forEach(item => {
       const phi = (90 - item.lat) * Math.PI / 180;
       const theta = item.lon * Math.PI / 180;
@@ -2520,6 +2645,14 @@ ${threeJsSrc}
       const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
       item.el.style.left = sx + 'px';
       item.el.style.top = sy + 'px';
+      const hsDir = pos.clone().normalize();
+      const dot = camDir.dot(hsDir);
+      const scale = 0.5 + 0.5 * Math.max(0, dot);
+      if (item.isFloor) {
+        item.el.style.transform = 'translate(-50%, -50%) perspective(200px) rotateX(55deg) scale(' + scale.toFixed(3) + ')';
+      } else {
+        item.el.style.transform = 'translate(-50%, -50%) scale(' + scale.toFixed(3) + ')';
+      }
     });
   }
 
@@ -2670,10 +2803,12 @@ ${threeJsSrc}
           showVRPanel('Media', url ? 'Link: ' + url : 'No media URL set');
         }
       } else {
-        if (hs.imageData) {
-          showFlatImage(hs.imageData);
+        if (hs.videoData) {
+          showFlatVideo(hs.videoData);
         } else if (hs.videoUrl) {
-          window.open(hs.videoUrl, '_blank');
+          showFlatVideo(hs.videoUrl);
+        } else if (hs.imageData) {
+          showFlatImage(hs.imageData);
         } else if (hs.linkUrl) {
           window.open(hs.linkUrl, '_blank');
         }
@@ -2684,8 +2819,40 @@ ${threeJsSrc}
   // Flat mode image popup
   function showFlatImage(imgSrc) {
     const modal = document.getElementById('info-modal');
-    document.getElementById('info-modal-title').textContent = '';
-    document.getElementById('info-modal-body').innerHTML = '<img src="' + imgSrc + '" style="max-width:90vw;max-height:80vh;border-radius:8px">';
+        document.getElementById('info-modal-title').textContent = '';
+    document.getElementById('info-modal-body').innerHTML = '<img src="' + imgSrc + '" style="max-width:85vw;max-height:80vh;border-radius:8px">';
+    modal.classList.add('open');
+  }
+
+  function showFlatVideo(src) {
+    const modal = document.getElementById('info-modal');
+        document.getElementById('info-modal-title').textContent = '';
+    let html = '';
+    var ytId = '';
+    if (src.indexOf('youtube.com/watch') !== -1) {
+      var vIdx = src.indexOf('v=');
+      if (vIdx !== -1) ytId = src.substring(vIdx + 2, vIdx + 13);
+    } else if (src.indexOf('youtu.be/') !== -1) {
+      ytId = src.split('youtu.be/')[1];
+      if (ytId) ytId = ytId.substring(0, 11);
+    } else if (src.indexOf('youtube.com/embed/') !== -1) {
+      ytId = src.split('youtube.com/embed/')[1];
+      if (ytId) ytId = ytId.substring(0, 11);
+    }
+    if (ytId && ytId.length >= 11) {
+      ytId = ytId.substring(0, 11);
+      html = '<iframe src="https://www.youtube.com/embed/' + ytId + '?autoplay=1" style="width:min(90vw,900px);height:min(50vw,506px);border:none;border-radius:8px" allow="autoplay;fullscreen" allowfullscreen></iframe>';
+    } else if (src.indexOf('vimeo.com/') !== -1) {
+      var vid = src.split('vimeo.com/')[1] || '';
+      vid = vid.split('?')[0].split('/')[0];
+      if (vid) {
+        html = '<iframe src="https://player.vimeo.com/video/' + vid + '?autoplay=1" style="width:min(90vw,900px);height:min(50vw,506px);border:none;border-radius:8px" allow="autoplay;fullscreen" allowfullscreen></iframe>';
+      }
+    }
+    if (!html) {
+      html = '<video src="' + src + '" controls autoplay style="max-width:90vw;max-height:80vh;border-radius:8px"></video>';
+    }
+    document.getElementById('info-modal-body').innerHTML = html;
     modal.classList.add('open');
   }
 
@@ -2720,8 +2887,18 @@ ${threeJsSrc}
     img.src = imgSrc;
   }
 
-  document.getElementById('info-close').onclick = () => document.getElementById('info-modal').classList.remove('open');
-  document.getElementById('info-modal').onclick = (e) => { if (e.target === document.getElementById('info-modal')) document.getElementById('info-modal').classList.remove('open'); };
+  function closeInfoModal() {
+    const modal = document.getElementById('info-modal');
+    const body = document.getElementById('info-modal-body');
+    const vid = body.querySelector('video');
+    if (vid) vid.pause();
+    const iframe = body.querySelector('iframe');
+    if (iframe) iframe.src = '';
+    body.innerHTML = '';
+        modal.classList.remove('open');
+  }
+  document.getElementById('info-close').onclick = closeInfoModal;
+  document.getElementById('info-modal').onclick = (e) => { if (e.target === document.getElementById('info-modal')) closeInfoModal(); };
 
   // VR controller rays
   function makeControllerRay() {
@@ -2843,10 +3020,10 @@ ${threeJsSrc}
   var gazeTargetId = null;   // scene id being gazed at
   var gazeStartTime = 0;     // when gaze started
   var gazeDwell = 1500;      // ms to hold gaze before navigating
-  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
-  controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
-  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; } });
-  controller2.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; });
+  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller1.userData._triggerActive = true; } });
+  controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; controller1.userData._triggerActive = false; });
+  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller2.userData._triggerActive = true; } });
+  controller2.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; controller2.userData._triggerActive = false; });
 
   function onVRSelect(event) {
     const controller = event.target;
@@ -3340,20 +3517,44 @@ ${threeJsSrc}
     mapPanX = 0;
     mapPanY = 0;
     mapDragStart = null;
+    mapTriggerHeld = false;
     // Reset to actual current floor and reload its floor plan image
     const actualFloorId = getCurrentFloorId();
-    if (mapViewFloorId !== actualFloorId) {
-      mapViewFloorId = actualFloorId;
-      loadFloorPlanImage(); // reload current floor's plan
-    }
     mapViewFloorId = actualFloorId;
-    vrMinimapMesh.geometry.dispose();
-    const sz = getSmallPlaneSize();
-    vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+    const curFloor = TOUR.floors.find(f => f.id === actualFloorId);
+    const fpData = curFloor ? curFloor.floorPlanData : null;
+    if (fpData) {
+      minimapFloorImg = new Image();
+      minimapFloorImg.onload = function() {
+        mapAspect = this.naturalHeight / this.naturalWidth;
+        mapCanvasW = Math.min(this.naturalWidth, 4096);
+        mapCanvasH = Math.round(mapCanvasW * mapAspect);
+        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+        vrMinimapCanvas.width = mapCanvasW;
+        vrMinimapCanvas.height = mapCanvasH;
+        const sz = getSmallPlaneSize();
+        vrMinimapMesh.geometry.dispose();
+        vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+        mapImageReady = true;
+        drawVRMinimap();
+        vrMinimapTex.needsUpdate = true;
+      };
+      minimapFloorImg.src = fpData;
+    } else {
+      minimapFloorImg = null;
+      mapAspect = 0.754;
+      mapCanvasW = 2048;
+      mapCanvasH = Math.round(2048 * mapAspect);
+      vrMinimapCanvas.width = mapCanvasW;
+      vrMinimapCanvas.height = mapCanvasH;
+      const sz = getSmallPlaneSize();
+      vrMinimapMesh.geometry.dispose();
+      vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+      drawVRMinimap();
+    }
     vrMinimapMesh.material.opacity = 0.85;
     vrMinimapMesh.material.depthTest = false;
     vrMinimapMesh.material.depthWrite = false;
-    drawVRMinimap();
   }
 
   function switchVRMapFloor(direction) {
@@ -3366,21 +3567,48 @@ ${threeJsSrc}
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
+    mapFloorSwitchCooldown = performance.now();
     const viewedFloor = sorted[newIdx];
     if (viewedFloor.floorPlanData) {
       mapImageReady = false;
       minimapFloorImg = new Image();
       minimapFloorImg.onload = function() {
+        mapAspect = this.naturalHeight / this.naturalWidth;
+        mapCanvasW = Math.min(this.naturalWidth, 4096);
+        mapCanvasH = Math.round(mapCanvasW * mapAspect);
+        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
+        vrMinimapCanvas.width = mapCanvasW;
+        vrMinimapCanvas.height = mapCanvasH;
+        if (vrMinimapActive) {
+          let bigW, bigH;
+          if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
+          else { bigH = 7; bigW = bigH / mapAspect; }
+          vrMinimapMesh.geometry.dispose();
+          vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
+        }
         mapImageReady = true;
-        // Keep same plane size — don't rebuild geometry, just redraw canvas
         drawVRMinimap();
+        vrMinimapTex.needsUpdate = true;
       };
       minimapFloorImg.src = viewedFloor.floorPlanData;
     } else {
       minimapFloorImg = null;
       mapImageReady = false;
+      mapAspect = 0.754;
+      mapCanvasW = 2048;
+      mapCanvasH = Math.round(2048 * mapAspect);
+      vrMinimapCanvas.width = mapCanvasW;
+      vrMinimapCanvas.height = mapCanvasH;
+      if (vrMinimapActive) {
+        let bigW, bigH;
+        if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
+        else { bigH = 7; bigW = bigH / mapAspect; }
+        vrMinimapMesh.geometry.dispose();
+        vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
+      }
+      drawVRMinimap();
+      vrMinimapTex.needsUpdate = true;
     }
-    drawVRMinimap();
   }
 
   function handleVRMinimapClick(uv) {
@@ -3394,6 +3622,7 @@ ${threeJsSrc}
       const hdrFontSize = Math.round(24 * hdrScale);
       const headerH = 8 + hdrFontSize + 32;
       if (my < headerH) {
+        if (performance.now() - mapFloorSwitchCooldown < 500) return true;
         if (mx < W / 2) {
           switchVRMapFloor(-1);
         } else {
@@ -3524,11 +3753,13 @@ ${threeJsSrc}
           if (session) {
             for (const src of session.inputSources) {
               if (!src.gamepad || src.gamepad.axes.length < 4) continue;
-              // Thumbstick left/right = zoom
-              const ax = src.gamepad.axes[2];
-              if (Math.abs(ax) > 0.2) {
+              // Thumbstick Y (up/down) = zoom, X (left/right) also zooms for flexibility
+              const axX = src.gamepad.axes[2];
+              const axY = src.gamepad.axes[3];
+              const zoomInput = Math.abs(axY) > Math.abs(axX) ? -axY : axX;
+              if (Math.abs(zoomInput) > 0.2) {
                 const oldZoom = mapZoom;
-                mapZoom = Math.max(1, Math.min(6, mapZoom + ax * 0.04));
+                mapZoom = Math.max(1, Math.min(6, mapZoom + zoomInput * 0.04));
                 if (Math.abs(mapZoom - oldZoom) > 0.001) {
                   if (mapZoom <= 1) {
                     mapPanX = 0;
@@ -3540,17 +3771,17 @@ ${threeJsSrc}
                   mapNeedsRedraw = true;
                 }
               }
-              // Thumbstick up/down reserved (floor switching is via clicking arrows on map header)
             }
           }
-          // Trigger held + move controller = drag/pan the map
+          // Trigger held + move controller = drag/pan the map (use whichever controller is active)
           if (mapTriggerHeld) {
             const pos = new THREE.Vector3();
-            controller1.getWorldPosition(pos);
+            const ctrl = controller2.userData._triggerActive ? controller2 : controller1;
+            ctrl.getWorldPosition(pos);
             if (mapDragStart) {
-              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 6.0;
-              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 6.0;
-              if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+              const dx = (pos.x - mapDragStart.x) * mapCanvasW * mapZoom * 4.0;
+              const dy = -(pos.y - mapDragStart.y) * mapCanvasH * mapZoom * 4.0;
+              if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
                 mapPanX += dx;
                 mapPanY += dy;
                 mapDidDrag = true;
