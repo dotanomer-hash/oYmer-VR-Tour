@@ -719,7 +719,9 @@ body {
 <!-- Context menu (scenes) -->
 <div id="ctx-menu">
   <div class="ctx-item" id="ctx-rename">Rename</div>
+  <div class="ctx-item" id="ctx-copy">Copy</div>
   <div class="ctx-item" id="ctx-replace">Replace Image</div>
+  <div class="ctx-item" id="ctx-reset-angle">Reset Position</div>
   <div class="ctx-item" id="ctx-delete">Delete</div>
 </div>
 <!-- Context menu (floors) -->
@@ -811,7 +813,7 @@ body {
 
   // === State ===
   const state = {
-    scenes: [],        // [{id, name, imageData, planX, planY, floorId, hotspots: [{id, lon, lat, type, label, icon, target, infoTitle, infoBody, videoUrl, linkUrl}]}]
+    scenes: [],        // [{id, name, imageData, startLon, startLat, planX, planY, floorId, hotspots: [{id, lon, lat, type, label, icon, target, infoTitle, infoBody, videoUrl, linkUrl}]}]
     floors: [{id: 1, name: 'Ground Floor', level: 0, floorPlanData: null}],
     currentSceneId: null,
     selectedHotspotId: null,
@@ -1023,12 +1025,11 @@ body {
       el.classList.remove('dragging-hotspot');
 
       if (draggingHs) {
-        // Hotspot was clicked or dragged — position already updated during drag
         draggingHs = null;
         return;
       }
 
-      if (pointerMoved) return; // was camera-panning, not a click
+      if (pointerMoved) { saveCurrentAngle(); return; } // was camera-panning — save angle
 
       // Click on empty panorama
       if (placingHotspot && state.currentSceneId) {
@@ -1392,25 +1393,70 @@ body {
       imageData: imageData,
       stereoType: stereoType || 'none',
       order: maxOrder + 1,
+      startLon: 0,
+      startLat: 0,
       floorId: state.currentFloorId || (state.floors[0] && state.floors[0].id) || 1,
       planX: null,
       planY: null,
       hotspots: []
     };
     state.scenes.push(scn);
+    generateThumb(scn).then(() => renderSceneList());
     selectScene(scn.id);
     renderSceneList();
   }
 
   function selectScene(id) {
+    // Save current angle before switching away
+    const prev = getCurrentScene();
+    if (prev) { prev.startLon = lon; prev.startLat = lat; }
+
     state.currentSceneId = id;
     deselectHotspot();
     const scn = getCurrentScene();
-    if (scn) loadPanorama(scn.imageData, scn.stereoType || (scn.isStereo ? 'ou' : 'none'));
+    if (scn) {
+      loadPanorama(scn.imageData, scn.stereoType || (scn.isStereo ? 'ou' : 'none'));
+      lon = scn.startLon || 0;
+      lat = scn.startLat || 0;
+    }
     renderSceneList();
   }
 
   let draggedSceneId = null;
+
+  // === Thumbnail generation (2D canvas, sequential, no WebGL) ===
+  const THUMB_W = 240, THUMB_H = 160;
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = THUMB_W;
+  thumbCanvas.height = THUMB_H;
+  const thumbCtx = thumbCanvas.getContext('2d');
+
+  function generateThumb(scn) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+        if (scn.stereoType === 'ou') { sh = Math.floor(sh / 2); }          // top half
+        else if (scn.stereoType === 'sbs') { sw = Math.floor(sw / 2); }    // left half
+        thumbCtx.drawImage(img, sx, sy, sw, sh, 0, 0, THUMB_W, THUMB_H);
+        scn._thumbSrc = thumbCanvas.toDataURL('image/jpeg', 0.6);
+        img.src = ''; // release memory
+        resolve();
+      };
+      img.onerror = () => { resolve(); }; // skip on failure
+      img.src = scn.imageData;
+    });
+  }
+
+  async function generateAllThumbs() {
+    for (const scn of state.scenes) {
+      if (!scn._thumbSrc) {
+        await generateThumb(scn);
+        // Re-render list so each thumb appears as soon as it's ready
+        renderSceneList();
+      }
+    }
+  }
 
   function renderSceneList() {
     sceneListEl.innerHTML = '';
@@ -1425,7 +1471,7 @@ body {
       const thumbWrap = document.createElement('div');
       thumbWrap.className = 'scene-thumb-wrap';
       const img = document.createElement('img');
-      img.src = scn.imageData;
+      img.src = scn._thumbSrc || scn.imageData;
       thumbWrap.appendChild(img);
 
       const orderLabel = document.createElement('span');
@@ -1552,9 +1598,15 @@ body {
 
   // === Save / Load ===
   async function saveProject() {
+    // Strip runtime-only fields (e.g. _thumbSrc) before saving
+    const cleanScenes = state.scenes.map(s => {
+      const c = Object.assign({}, s);
+      delete c._thumbSrc;
+      return c;
+    });
     const data = {
       version: 2,
-      scenes: state.scenes,
+      scenes: cleanScenes,
       floors: state.floors,
       nextSceneId: state.nextSceneId,
       nextHotspotId: state.nextHotspotId,
@@ -1621,6 +1673,7 @@ body {
         emptyState.style.display = 'block';
       }
       renderSceneList();
+      generateAllThumbs(); // create small thumbnails in background
     } catch (e) {
       alert('Failed to load project: ' + e.message);
     }
@@ -1629,6 +1682,9 @@ body {
   // === Export ===
   async function exportTour() {
     if (state.scenes.length === 0) { alert('Add at least one scene first.'); return; }
+    // Save current scene's angle before exporting
+    const curScn = getCurrentScene();
+    if (curScn) { curScn.startLon = lon; curScn.startLat = lat; }
 
     const tourData = {
       scenes: state.scenes.map(s => ({
@@ -1636,6 +1692,8 @@ body {
         name: s.name,
         imageData: s.imageData,
         stereoType: s.stereoType || (s.isStereo ? 'ou' : 'none'),
+        startLon: s.startLon || 0,
+        startLat: s.startLat || 0,
         order: s.order || 1,
         floorId: s.floorId || (state.floors[0] && state.floors[0].id) || 1,
         planX: s.planX,
@@ -1743,6 +1801,8 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #sidebar.open ~ #sidebar-toggle { left: 220px; }
 .nav-item { position: relative; border-radius: 3px; cursor: pointer; margin-bottom: 4px; overflow: hidden; border: 2px solid transparent; transition: all 0.2s; }
 .nav-item img { width: 100%; aspect-ratio: 3/2; object-fit: cover; display: block; }
+.nav-item img.stereo-ou { object-position: top; aspect-ratio: 2/1; }
+.nav-item img.stereo-sbs { object-position: left; aspect-ratio: 2/1; }
 .nav-item .nav-order { position: absolute; top: 0; left: 0; background: rgba(0,0,0,0.7); color: #00f0ff; font-size: 13px; font-weight: 700; padding: 1px 5px; line-height: 1.3; border-radius: 0 0 3px 0; z-index: 1; }
 .nav-item .nav-name { position: absolute; top: 0; left: 22px; right: 0; background: linear-gradient(rgba(0,0,0,0.8), transparent); color: #fff; font-size: 13px; font-weight: 600; padding: 3px 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s; }
 .nav-item:hover .nav-name { opacity: 1; }
@@ -1839,7 +1899,8 @@ ${threeJsSrc}
 (function(){
   const TOUR = ${JSON.stringify(tourData)};
   let currentSceneId = TOUR.startSceneId;
-  let lon = 0, lat = 0;
+  var _startSc = TOUR.scenes.find(function(s){return s.id===currentSceneId});
+  let lon = _startSc ? (_startSc.startLon || 0) : 0, lat = _startSc ? (_startSc.startLat || 0) : 0;
   let pointerDown = false, pointerMoved = false;
   let startX = 0, startY = 0, lastX = 0, lastY = 0;
   const texCache = {}; // cache panorama textures for faster scene switching
@@ -2066,6 +2127,8 @@ ${threeJsSrc}
       d.className = 'nav-item' + (s.id === currentSceneId ? ' active' : '');
       const img = document.createElement('img');
       img.src = s.imageData;
+      if (s.stereoType === 'ou') img.className = 'stereo-ou';
+      else if (s.stereoType === 'sbs') img.className = 'stereo-sbs';
       d.appendChild(img);
       const order = document.createElement('span');
       order.className = 'nav-order';
@@ -2539,7 +2602,7 @@ ${threeJsSrc}
     if (id === currentSceneId) return;
     const fade = document.getElementById('fade-overlay');
     fade.classList.add('active');
-    setTimeout(() => { loadScene(id); lon = 0; lat = 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
+    setTimeout(() => { loadScene(id); var sc = TOUR.scenes.find(function(s){return s.id===id}); lon = sc ? (sc.startLon || 0) : 0; lat = sc ? (sc.startLat || 0) : 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
   }
 
   // === Input: mouse/touch drag for desktop + device orientation for Quest flat mode ===
@@ -3734,11 +3797,8 @@ ${threeJsSrc}
       if (!renderer.xr.isPresenting) {
         const phi = (90 - lat) * Math.PI / 180;
         const theta = lon * Math.PI / 180;
-        camera.lookAt(new THREE.Vector3(
-          Math.sin(phi)*Math.cos(theta),
-          Math.cos(phi),
-          Math.sin(phi)*Math.sin(theta)
-        ));
+        const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+        camera.lookAt(target);
         vrMinimapMesh.visible = false;
       } else {
         if (!vrMinimapActive) updateGaze();
@@ -3854,6 +3914,20 @@ ${threeJsSrc}
     return scn.hotspots.find(h => h.id === state.selectedHotspotId) || null;
   }
 
+  // === Starting View Angle (auto-save on rotate) ===
+  function saveCurrentAngle() {
+    const scn = getCurrentScene();
+    if (scn) { scn.startLon = lon; scn.startLat = lat; }
+  }
+  document.getElementById('ctx-reset-angle').addEventListener('click', () => {
+    if (!ctxTargetScene) return;
+    const scn = ctxTargetScene;
+    hideContextMenu();
+    scn.startLon = 0; scn.startLat = 0;
+    // If it's the currently viewed scene, also reset the live camera
+    if (state.currentSceneId === scn.id) { lon = 0; lat = 0; }
+  });
+
   // === Toolbar Events ===
   document.getElementById('btn-add-hotspot').addEventListener('click', () => {
     if (!state.currentSceneId) { alert('Load a scene first.'); return; }
@@ -3964,6 +4038,31 @@ ${threeJsSrc}
     }
   });
 
+  document.getElementById('ctx-copy').addEventListener('click', () => {
+    if (!ctxTargetScene) return;
+    const src = ctxTargetScene;
+    hideContextMenu();
+    const maxOrder = state.scenes.reduce((m, s) => Math.max(m, s.order || 0), 0);
+    const copy = {
+      id: state.nextSceneId++,
+      name: src.name + ' (Copy)',
+      imageData: src.imageData,
+      stereoType: src.stereoType || 'none',
+      order: maxOrder + 1,
+      startLon: 0,
+      startLat: 0,
+      floorId: src.floorId,
+      planX: null,
+      planY: null,
+      hotspots: []
+    };
+    // Reuse thumbnail from source
+    if (src._thumbSrc) copy._thumbSrc = src._thumbSrc;
+    state.scenes.push(copy);
+    selectScene(copy.id);
+    renderSceneList();
+  });
+
   document.getElementById('ctx-delete').addEventListener('click', () => {
     if (!ctxTargetScene) return;
     const scn = ctxTargetScene;
@@ -4002,9 +4101,11 @@ ${threeJsSrc}
       const result = await processImage(file);
       scn.imageData = result.dataUrl;
       scn.stereoType = result.stereoType;
+      scn._thumbSrc = null; // regenerate thumbnail
       if (state.currentSceneId === scn.id) {
         loadPanorama(scn.imageData, scn.stereoType);
       }
+      generateThumb(scn).then(() => renderSceneList());
       renderSceneList();
     };
     input.click();
