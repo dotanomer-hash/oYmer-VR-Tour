@@ -780,7 +780,6 @@ body {
     <div id="floor-tabs-bar"></div>
     <div id="floorplan-body">
       <canvas id="floorplan-canvas"></canvas>
-      <div id="floorplan-hint">Drag scene markers to position them on the floor plan</div>
     </div>
   </div>
 </div>
@@ -1597,15 +1596,33 @@ body {
   }
 
   // === Save / Load ===
-  async function saveProject() {
-    // Strip runtime-only fields (e.g. _thumbSrc) before saving
-    const cleanScenes = state.scenes.map(s => {
+  function deduplicateImages(scenes) {
+    const images = {};
+    let idx = 0;
+    const imgKeyMap = new Map();
+    const cleanScenes = scenes.map(s => {
       const c = Object.assign({}, s);
       delete c._thumbSrc;
+      if (c.imageData) {
+        const fingerprint = c.imageData.length + ':' + c.imageData.slice(0, 64);
+        if (!imgKeyMap.has(fingerprint)) {
+          const key = 'img_' + idx++;
+          imgKeyMap.set(fingerprint, key);
+          images[key] = c.imageData;
+        }
+        c.imageRef = imgKeyMap.get(fingerprint);
+        delete c.imageData;
+      }
       return c;
     });
+    return { cleanScenes, images };
+  }
+
+  async function saveProject() {
+    const { cleanScenes, images } = deduplicateImages(state.scenes);
     const data = {
-      version: 2,
+      version: 3,
+      images: images,
       scenes: cleanScenes,
       floors: state.floors,
       nextSceneId: state.nextSceneId,
@@ -1641,6 +1658,15 @@ body {
     try {
       const data = JSON.parse(json);
       state.scenes = data.scenes || [];
+      // Restore imageData from deduplicated images pool (v3+)
+      if (data.images) {
+        state.scenes.forEach(s => {
+          if (s.imageRef && data.images[s.imageRef]) {
+            s.imageData = data.images[s.imageRef];
+            delete s.imageRef;
+          }
+        });
+      }
       state.nextSceneId = data.nextSceneId || 1;
       state.nextHotspotId = data.nextHotspotId || 1;
 
@@ -1660,6 +1686,7 @@ body {
         if (!s.floorId) s.floorId = firstFloorId;
         if (!s.stereoType) s.stereoType = s.isStereo ? 'ou' : 'none';
         if (!s.order) s.order = state.scenes.length - i;
+        if (s.mapVisible === undefined && s.name && s.name.endsWith('(Copy)')) s.mapVisible = false;
       });
 
       state.currentFloorId = firstFloorId;
@@ -1686,11 +1713,28 @@ body {
     const curScn = getCurrentScene();
     if (curScn) { curScn.startLon = lon; curScn.startLat = lat; }
 
+    // Get file handle first so we know the tour name
+    if (!exportFileHandle && window.showSaveFilePicker) {
+      try {
+        exportFileHandle = await window.showSaveFilePicker({
+          suggestedName: 'vr-tour.html',
+          types: [{ description: 'HTML Tour', accept: { 'text/html': ['.html'] } }]
+        });
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        exportFileHandle = null;
+      }
+    }
+
+    const { cleanScenes: exportScenes, images: exportImages } = deduplicateImages(state.scenes);
+    const tourName = exportFileHandle ? exportFileHandle.name.replace(/\.html?$/i, '') : 'VR Tour';
     const tourData = {
-      scenes: state.scenes.map(s => ({
+      tourName: tourName,
+      images: exportImages,
+      scenes: exportScenes.map(s => ({
         id: s.id,
         name: s.name,
-        imageData: s.imageData,
+        imageRef: s.imageRef,
         stereoType: s.stereoType || (s.isStereo ? 'ou' : 'none'),
         startLon: s.startLon || 0,
         startLat: s.startLat || 0,
@@ -1698,6 +1742,7 @@ body {
         floorId: s.floorId || (state.floors[0] && state.floors[0].id) || 1,
         planX: s.planX,
         planY: s.planY,
+        mapVisible: s.mapVisible !== false,
         hotspots: s.hotspots.map(h => ({
           id: h.id, lon: h.lon, lat: h.lat, type: h.type, placement: h.placement || 'wall', label: h.label, icon: h.icon,
           target: h.target, infoTitle: h.infoTitle, infoBody: h.infoBody, videoUrl: h.videoUrl, videoData: h.videoData || null, linkUrl: h.linkUrl, imageData: h.imageData || null,
@@ -1737,7 +1782,6 @@ body {
 
     const blob = new Blob([html], { type: 'text/html' });
 
-    // Reuse saved file handle so export goes to same location every time
     if (exportFileHandle) {
       try {
         const writable = await exportFileHandle.createWritable();
@@ -1745,22 +1789,7 @@ body {
         await writable.close();
         alert('Exported to ' + exportFileHandle.name);
         return;
-      } catch (e) { /* handle lost, fall through to picker */ }
-    }
-    if (window.showSaveFilePicker) {
-      try {
-        exportFileHandle = await window.showSaveFilePicker({
-          suggestedName: 'vr-tour.html',
-          types: [{ description: 'HTML Tour', accept: { 'text/html': ['.html'] } }]
-        });
-        const writable = await exportFileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        alert('Exported to ' + exportFileHandle.name + '. Future exports will save here automatically.');
-        return;
-      } catch (e) {
-        if (e.name === 'AbortError') return;
-      }
+      } catch (e) { exportFileHandle = null; }
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1780,7 +1809,7 @@ body {
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>VR Tour</title>
+<title>${tourData.tourName}</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
@@ -1831,6 +1860,28 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 #fade-overlay { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s; z-index: 800; }
 #fade-overlay.active { opacity: 1; }
 
+/* Start Tour splash */
+#start-splash { position: fixed; inset: 0; background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a12 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
+#start-splash .splash-brand { font-family: 'Orbitron', monospace; font-size: 42px; font-weight: 900; color: #ff7a00; text-shadow: 0 0 20px rgba(255,122,0,0.6), 0 0 60px rgba(255,122,0,0.3); letter-spacing: 4px; margin-bottom: 12px; }
+#start-splash .splash-title { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 500; color: rgba(232,232,240,0.7); letter-spacing: 2px; margin-bottom: 40px; text-transform: uppercase; }
+
+/* Loading bar */
+#splash-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+#splash-loading .load-track { width: 280px; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,122,0,0.2); position: relative; }
+#splash-loading .load-track::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(255,255,255,0.03) 8px, rgba(255,255,255,0.03) 16px); }
+#splash-loading .load-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff5500, #ff7a00, #ffaa00); border-radius: 4px; transition: width 0.3s ease-out; position: relative; box-shadow: 0 0 12px rgba(255,122,0,0.6), 0 0 4px rgba(255,122,0,0.8); }
+#splash-loading .load-fill::after { content: ''; position: absolute; right: 0; top: -2px; bottom: -2px; width: 20px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6)); border-radius: 0 4px 4px 0; filter: blur(2px); }
+#splash-loading .load-text { font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: rgba(255,122,0,0.7); text-transform: uppercase; letter-spacing: 2px; }
+
+/* Buttons (hidden during loading) */
+#splash-buttons { display: none; flex-direction: column; gap: 16px; align-items: center; }
+#start-splash .splash-btn { font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #ff7a00, #ff5500); border: none; padding: 16px 48px; border-radius: 4px; cursor: pointer; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 30px rgba(255,122,0,0.4); transition: transform 0.2s, box-shadow 0.2s; animation: splashPulse 2s ease-in-out infinite; min-width: 260px; }
+#start-splash .splash-btn:hover { transform: scale(1.05); box-shadow: 0 0 50px rgba(255,122,0,0.6); }
+#start-splash .splash-btn-vr { background: linear-gradient(135deg, #00c8ff, #0088cc); box-shadow: 0 0 30px rgba(0,200,255,0.4); animation: splashPulseVR 2s ease-in-out infinite; display: none; }
+#start-splash .splash-btn-vr:hover { transform: scale(1.05); box-shadow: 0 0 50px rgba(0,200,255,0.6); }
+@keyframes splashPulse { 0%,100% { box-shadow: 0 0 30px rgba(255,122,0,0.4); } 50% { box-shadow: 0 0 50px rgba(255,122,0,0.6); } }
+@keyframes splashPulseVR { 0%,100% { box-shadow: 0 0 30px rgba(0,200,255,0.4); } 50% { box-shadow: 0 0 50px rgba(0,200,255,0.6); } }
+
 /* Info modal */
 #info-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1100; }
 #info-modal.open { display: flex; }
@@ -1864,6 +1915,18 @@ body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; 
 <body>
 <div id="logo">${OYMER_LOGO_SVG}</div>
 <div id="fade-overlay"></div>
+<div id="start-splash">
+  <div class="splash-brand">oYmer VR</div>
+  <div class="splash-title">${tourData.tourName.replace(/'/g, "\\'")}</div>
+  <div id="splash-loading">
+    <div class="load-track"><div class="load-fill" id="load-fill"></div></div>
+    <div class="load-text" id="load-text">Loading scenes...</div>
+  </div>
+  <div id="splash-buttons">
+    <button class="splash-btn splash-btn-vr" id="splash-vr">Enter VR</button>
+    <button class="splash-btn" id="splash-start">Start Tour</button>
+  </div>
+</div>
 
 <div id="sidebar">
   <div style="padding:12px 16px; font-weight:700; color:#ff7a00; border-bottom:1px solid #333;">Scenes</div>
@@ -1898,6 +1961,8 @@ ${threeJsSrc}
 <script>
 (function(){
   const TOUR = ${JSON.stringify(tourData)};
+  // Resolve deduplicated images
+  if (TOUR.images) { TOUR.scenes.forEach(function(s) { if (s.imageRef && TOUR.images[s.imageRef]) { s.imageData = TOUR.images[s.imageRef]; } }); }
   let currentSceneId = TOUR.startSceneId;
   var _startSc = TOUR.scenes.find(function(s){return s.id===currentSceneId});
   let lon = _startSc ? (_startSc.startLon || 0) : 0, lat = _startSc ? (_startSc.startLat || 0) : 0;
@@ -2164,7 +2229,7 @@ ${threeJsSrc}
   }
 
   function getScenesForFloor(floorId) {
-    return TOUR.scenes.filter(s => (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) === floorId);
+    return TOUR.scenes.filter(s => (s.floorId || (TOUR.floors && TOUR.floors[0] && TOUR.floors[0].id) || 1) === floorId && s.mapVisible !== false);
   }
 
 
@@ -2685,7 +2750,7 @@ ${threeJsSrc}
       if (dir === '👁⬆') arrowHtml = '<span class="hs-arrow hs-arrow-up"></span>';
       else if (dir === '👁⬇') arrowHtml = '<span class="hs-arrow hs-arrow-down"></span>';
       const mainIcon = hs.type === 'audio' ? '🔊' : '👁';
-      el.innerHTML = mainIcon + arrowHtml + '<span class="hs-label">' + (hs.label||'') + '</span>';
+      el.innerHTML = mainIcon + arrowHtml;
       el.onclick = (e) => { e.stopPropagation(); handleHotspotClick(hs); };
       layer.appendChild(el);
       hsElements.push({ el: el, lat: hs.lat, lon: hs.lon, isFloor: hs.placement === 'floor' });
@@ -2831,12 +2896,23 @@ ${threeJsSrc}
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   }
 
+  let pendingAutoplay = null;
   function playAudio(audioData) {
     stopAudio();
+    pendingAutoplay = null;
     currentAudio = new Audio(audioData);
-    currentAudio.play().catch(() => {});
+    currentAudio.play().catch(() => { pendingAutoplay = audioData; });
     currentAudio.addEventListener('ended', () => { currentAudio = null; });
   }
+  function tryPendingAutoplay() {
+    if (!pendingAutoplay) return;
+    const data = pendingAutoplay;
+    pendingAutoplay = null;
+    playAudio(data);
+  }
+  ['click', 'touchstart', 'keydown'].forEach(evt => {
+    document.addEventListener(evt, tryPendingAutoplay, { once: false });
+  });
 
   function handleHotspotClick(hs) {
     if (hs.type === 'audio' && hs.audioData) {
@@ -3898,7 +3974,75 @@ ${threeJsSrc}
     });
   }
 
-  loadScene(currentSceneId);
+  var splash = document.getElementById('start-splash');
+  if (splash) {
+    var totalImages = TOUR.scenes.length;
+    var loadedImages = 0;
+    var fillEl = document.getElementById('load-fill');
+    var textEl = document.getElementById('load-text');
+    var preloadDone = false;
+
+    function updateProgress() {
+      var pct = totalImages > 0 ? Math.round((loadedImages / totalImages) * 100) : 100;
+      fillEl.style.width = pct + '%';
+      textEl.textContent = 'Loading scene ' + loadedImages + ' / ' + totalImages;
+      if (loadedImages >= totalImages) finishLoading();
+    }
+
+    function finishLoading() {
+      preloadDone = true;
+      fillEl.style.width = '100%';
+      textEl.textContent = 'Ready';
+      setTimeout(function() {
+        document.getElementById('splash-loading').style.display = 'none';
+        document.getElementById('splash-buttons').style.display = 'flex';
+      }, 300);
+    }
+
+    if (totalImages === 0) {
+      finishLoading();
+    } else {
+      TOUR.scenes.forEach(function(s) {
+        if (!s.imageData) { loadedImages++; updateProgress(); return; }
+        var img = new Image();
+        img.onload = img.onerror = function() {
+          texCache[s.id] = new THREE.TextureLoader().load(s.imageData);
+          texCache[s.id].colorSpace = THREE.SRGBColorSpace;
+          loadedImages++;
+          updateProgress();
+        };
+        img.src = s.imageData;
+      });
+    }
+
+    function dismissSplash() {
+      splash.style.opacity = '0';
+      splash.style.transition = 'opacity 0.5s';
+      setTimeout(function() { splash.remove(); }, 500);
+      loadScene(currentSceneId);
+    }
+
+    document.getElementById('splash-start').addEventListener('click', function(e) {
+      e.stopPropagation();
+      dismissSplash();
+    });
+    var splashVrBtn = document.getElementById('splash-vr');
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-vr').then(function(supported) {
+        if (supported) splashVrBtn.style.display = 'block';
+      }).catch(function() {});
+    }
+    splashVrBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      dismissSplash();
+      setTimeout(function() {
+        var vrBtn = document.getElementById('vr-button');
+        if (vrBtn) vrBtn.click();
+      }, 600);
+    });
+  } else {
+    loadScene(currentSceneId);
+  }
   animate();
 })();
 <\/script>
@@ -4054,6 +4198,7 @@ ${threeJsSrc}
       floorId: src.floorId,
       planX: null,
       planY: null,
+      mapVisible: false,
       hotspots: []
     };
     // Reuse thumbnail from source
@@ -4194,8 +4339,8 @@ ${threeJsSrc}
     return state.floors.find(f => f.id === state.currentFloorId) || state.floors[0];
   }
 
-  function getScenesForCurrentFloor() {
-    return state.scenes.filter(s => s.floorId === state.currentFloorId);
+  function getScenesForCurrentFloor(includeHidden) {
+    return state.scenes.filter(s => s.floorId === state.currentFloorId && (includeHidden || s.mapVisible !== false));
   }
 
 
