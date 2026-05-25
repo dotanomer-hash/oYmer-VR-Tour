@@ -1964,6 +1964,9 @@ ${threeJsSrc}
   let pointerDown = false, pointerMoved = false;
   let startX = 0, startY = 0, lastX = 0, lastY = 0;
   const texCache = {}; // cache panorama textures for faster scene switching
+  var vrSceneYaw = 0;          // rotation applied to sphere + hotspots in VR
+  var vrSceneYawTarget = 0;    // scene's startLon in radians
+  var vrSceneYawNeedsCalc = false;  // recalc on next VR frame using head direction
 
   // Three.js setup
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -2557,6 +2560,9 @@ ${threeJsSrc}
     currentSceneId = id;
     currentStereo = s.stereoType || (s.isStereo ? 'ou' : 'none');
     currentFloorId = getCurrentFloorId();
+    // Mark that VR scene yaw needs recalculation on next VR frame
+    vrSceneYawTarget = (s.startLon || 0) * Math.PI / 180;
+    vrSceneYawNeedsCalc = true;
 
     const tex = texCache[id] || new THREE.TextureLoader().load(s.imageData);
     texCache[id] = tex;
@@ -3905,12 +3911,26 @@ ${threeJsSrc}
       const t = performance.now() / 1000;
       pulseHotspots(t);
       if (!renderer.xr.isPresenting) {
+        // Flat mode: camera orbits via lon/lat, no sphere rotation needed
+        sphere.rotation.y = 0;
+        vrHotspotGroup.rotation.y = 0;
         const phi = (90 - lat) * Math.PI / 180;
         const theta = lon * Math.PI / 180;
         const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
         camera.lookAt(target);
         vrMinimapMesh.visible = false;
       } else {
+        // VR mode: compute scene yaw relative to user's current head direction
+        if (vrSceneYawNeedsCalc) {
+          var xrCamD = renderer.xr.getCamera();
+          var headDir = new THREE.Vector3();
+          xrCamD.getWorldDirection(headDir);
+          var headYaw = Math.atan2(headDir.x, headDir.z);
+          vrSceneYaw = headYaw - vrSceneYawTarget;
+          vrSceneYawNeedsCalc = false;
+        }
+        sphere.rotation.y = vrSceneYaw;
+        vrHotspotGroup.rotation.y = vrSceneYaw;
         if (!vrMinimapActive) updateGaze();
         vrMinimapMesh.visible = !vrMinimapHidden;
         if (!vrMinimapHidden) updateVRMinimapPosition();
