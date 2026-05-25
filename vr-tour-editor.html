@@ -2120,9 +2120,9 @@ ${threeJsSrc}
         vrHotspotGroup.add(coneMesh);
       }
 
-      // Invisible hit area for gaze/laser targeting (narrower to avoid accidental triggers)
+      // Invisible hit area for gaze/laser targeting (generous for easy gaze aiming)
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(12, 16),
+        new THREE.CircleGeometry(16, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
