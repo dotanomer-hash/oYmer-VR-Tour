@@ -2552,6 +2552,24 @@ ${threeJsSrc}
   document.getElementById('minimap-floor-prev').addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); switchFlatMapFloor(-1); }, { passive: false });
   document.getElementById('minimap-floor-next').addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); switchFlatMapFloor(1); }, { passive: false });
 
+  function pruneTexCache(keepId) {
+    var keep = {};
+    keep[keepId] = true;
+    var s = TOUR.scenes.find(function(sc){ return sc.id === keepId; });
+    if (s) {
+      s.hotspots.forEach(function(h) {
+        if (h.type === 'nav' && h.target != null) keep[parseInt(h.target)] = true;
+      });
+    }
+    Object.keys(texCache).forEach(function(k) {
+      var kId = isNaN(parseInt(k)) ? k : parseInt(k);
+      if (!keep[k] && !keep[kId]) {
+        texCache[k].dispose();
+        delete texCache[k];
+      }
+    });
+  }
+
   function loadScene(id) {
     const s = TOUR.scenes.find(sc => sc.id === id);
     if (!s) return;
@@ -2663,6 +2681,9 @@ ${threeJsSrc}
     stopAudio();
     const autoAudio = s.hotspots.find(h => h.type === 'audio' && h.audioAutoplay && h.audioData);
     if (autoAudio) playAudio(autoAudio.audioData);
+
+    // Free GPU memory: dispose textures not for current scene or its nav neighbors
+    pruneTexCache(id);
   }
 
   function goToScene(id) {
