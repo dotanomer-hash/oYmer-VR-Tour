@@ -3218,6 +3218,13 @@ ${threeJsSrc}
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
     }
 
+    // If user is currently gazing at a hotspot, trigger fires it instantly
+    if (gazeTarget && gazeTarget.userData && gazeTarget.userData.type && !vrMinimapActive) {
+      handleHotspotClick(gazeTarget.userData);
+      gazeTarget = null; gazeTimer = 0; gazeCooldown = GAZE_COOLDOWN; gazeFillMesh.visible = false;
+      return;
+    }
+
     // If minimap is ACTIVE (enlarged):
     // - Single click trigger on scene node → navigate (if not dragging)
     // - Trigger drag → pan (handled in animate loop)
@@ -3285,12 +3292,19 @@ ${threeJsSrc}
   gazeFillMesh.visible = false;
   scene.add(gazeFillMesh);
 
+  // Center reticle dot — always visible in VR so user knows where gaze points
+  const reticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthTest: false });
+  const reticleMesh = new THREE.Mesh(new THREE.CircleGeometry(0.15, 24), reticleMat);
+  reticleMesh.renderOrder = 1000;
+  reticleMesh.visible = false;
+  scene.add(reticleMesh);
+
   let gazeTarget = null;
   let gazeTimer = 0;
   let gazeGrace = 0;
   let gazeCooldown = 0;
-  const GAZE_DWELL = 2.0;
-  const GAZE_GRACE = 0;
+  const GAZE_DWELL = 1.8;
+  const GAZE_GRACE = 0.3;
   const GAZE_COOLDOWN = 1.5;
   let lastFrameTime = performance.now();
 
@@ -3299,20 +3313,27 @@ ${threeJsSrc}
     const dt = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+
+    // Position reticle in center of gaze (always visible in VR)
+    reticleMesh.visible = true;
+    reticleMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(50));
+    reticleMesh.lookAt(camPos);
+
     // Cooldown after scene navigation — prevent immediate re-trigger
     if (gazeCooldown > 0) {
       gazeCooldown -= dt;
       gazeFillMesh.visible = false;
       gazeTarget = null;
       gazeTimer = 0;
+      reticleMat.opacity = 0.4;
+      reticleMat.color.set(0xffffff);
       return;
     }
-
-    const xrCam = renderer.xr.getCamera();
-    const camPos = new THREE.Vector3();
-    const camDir = new THREE.Vector3();
-    xrCam.getWorldPosition(camPos);
-    xrCam.getWorldDirection(camDir);
 
     raycaster.ray.origin.copy(camPos);
     raycaster.ray.direction.copy(camDir);
@@ -3919,6 +3940,7 @@ ${threeJsSrc}
         const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
         camera.lookAt(target);
         vrMinimapMesh.visible = false;
+        reticleMesh.visible = false;
       } else {
         // VR mode: compute scene yaw relative to user's current head direction
         if (vrSceneYawNeedsCalc) {
@@ -3931,7 +3953,12 @@ ${threeJsSrc}
         }
         sphere.rotation.y = vrSceneYaw;
         vrHotspotGroup.rotation.y = vrSceneYaw;
-        if (!vrMinimapActive) updateGaze();
+        if (!vrMinimapActive) {
+          updateGaze();
+        } else {
+          reticleMesh.visible = false;
+          gazeFillMesh.visible = false;
+        }
         vrMinimapMesh.visible = !vrMinimapHidden;
         if (!vrMinimapHidden) updateVRMinimapPosition();
         updateRayDots();
