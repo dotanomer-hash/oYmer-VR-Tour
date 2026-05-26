@@ -20,6 +20,51 @@ const MIME = {
 };
 
 function handler(req, res) {
+  // === POST /save?path=... — write request body to file at DIR + path ===
+  // Used by the editor's Export feature to bypass Chrome's File System Access API
+  // (which fails with InvalidStateError when the file is being read by another tab,
+  // e.g. the Quest browser streaming the file via this same server).
+  if (req.method === 'POST' && req.url.startsWith('/save?')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    try {
+      const qs = req.url.slice(req.url.indexOf('?') + 1);
+      const params = Object.fromEntries(new URLSearchParams(qs));
+      const relPath = decodeURIComponent(params.path || '');
+      if (!relPath) { res.writeHead(400); res.end('Missing path'); return; }
+      const target = path.resolve(DIR, relPath.replace(/^[/\\]+/, ''));
+      // Security: path must stay inside DIR
+      if (!target.startsWith(DIR + path.sep) && target !== DIR) {
+        res.writeHead(403); res.end('Path outside server root'); return;
+      }
+      // Ensure parent directory exists
+      const parent = path.dirname(target);
+      try { fs.mkdirSync(parent, { recursive: true }); } catch(e) {}
+      // Collect body
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => {
+        try {
+          fs.writeFileSync(target, Buffer.concat(chunks));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, path: relPath, bytes: chunks.reduce((n, c) => n + c.length, 0) }));
+        } catch (e) {
+          res.writeHead(500); res.end('Write failed: ' + e.message);
+        }
+      });
+      req.on('error', e => { res.writeHead(500); res.end('Request error: ' + e.message); });
+    } catch (e) { res.writeHead(500); res.end('Server error: ' + e.message); }
+    return;
+  }
+  // CORS preflight for /save
+  if (req.method === 'OPTIONS' && req.url.startsWith('/save')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.writeHead(204); res.end(); return;
+  }
+
   // Root shows file listing with editor link
   if (req.url === '/' || req.url === '') {
     const files = [];

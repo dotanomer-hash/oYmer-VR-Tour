@@ -1778,13 +1778,29 @@ body {
 
     const blob = new Blob([html], { type: 'text/html' });
     if (exportFileHandle) {
-      try {
-        const writable = await exportFileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        alert('Exported to ' + exportFileHandle.name);
-        return;
-      } catch (e) { exportFileHandle = null; }
+      // Try up to 3 times — between picker and write, OneDrive/server activity can change the
+      // file's cached state and trigger InvalidStateError. Refreshing via getFile() then retrying
+      // usually clears it.
+      let lastErr = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          // Refresh the handle's cached state from disk before writing
+          try { await exportFileHandle.getFile(); } catch (_) {}
+          const writable = await exportFileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          alert('Exported to ' + exportFileHandle.name);
+          return;
+        } catch (e) {
+          lastErr = e;
+          console.warn('[Export] Attempt ' + (attempt + 1) + ' failed:', e && e.message);
+          // Brief pause before retry to let OneDrive/server release the file
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+      console.error('[Export] All write attempts failed. Last error:', lastErr);
+      alert('Failed to write to ' + (exportFileHandle.name || 'chosen file') + ' after 3 retries:\n\n' + (lastErr && lastErr.message ? lastErr.message : String(lastErr)) + '\n\nFalling back to Downloads folder.');
+      exportFileHandle = null;
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2648,9 +2664,6 @@ ${threeJsSrc}
             if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
             vrMinimapCanvas.width = mapCanvasW;
             vrMinimapCanvas.height = mapCanvasH;
-            const sz = getSmallPlaneSize();
-            vrMinimapMesh.geometry.dispose();
-            vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
             mapImageReady = true;
             drawMinimap();
             drawVRMinimap();
@@ -2671,9 +2684,6 @@ ${threeJsSrc}
             vrMinimapCanvas.width = mapCanvasW;
             vrMinimapCanvas.height = mapCanvasH;
           }
-          const sz = getSmallPlaneSize();
-          vrMinimapMesh.geometry.dispose();
-          vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
         }
       }
     }
@@ -2699,6 +2709,10 @@ ${threeJsSrc}
     const fade = document.getElementById('fade-overlay');
     fade.classList.add('active');
     setTimeout(() => { loadScene(id); var sc = TOUR.scenes.find(function(s){return s.id===id}); lon = sc ? (sc.startLon || 0) : 0; lat = sc ? (sc.startLat || 0) : 0; setTimeout(() => fade.classList.remove('active'), 100); }, 400);
+    // If we're in VR and the icon is visible, recenter it under the new view
+    if (renderer.xr.isPresenting && vrMinimapIcon.visible) {
+      repositionMapIcon();
+    }
   }
 
   // === Input: mouse/touch drag for desktop + device orientation for Quest flat mode ===
@@ -3215,6 +3229,9 @@ ${threeJsSrc}
       }
     } else {
       vrMinimapHidden = !vrMinimapHidden;
+      // Icon visibility tracks vrMinimapHidden — animate-loop will reposition on next visible frame
+      vrMinimapIcon.visible = !vrMinimapHidden && renderer.xr.isPresenting;
+      if (vrMinimapIcon.visible) repositionMapIcon();
     }
   }
   controller1.addEventListener('squeeze', onGrip);
@@ -3239,12 +3256,34 @@ ${threeJsSrc}
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
 
-    // Check close button first
+    // Check close button first (VR info panel)
     if (vrPanelGroup.visible && vrPanelCloseMesh) {
       const panelHits = raycaster.intersectObject(vrPanelCloseMesh);
       if (panelHits.length > 0) { hideVRPanel(); return; }
       const fullPanelHits = raycaster.intersectObjects(vrPanelGroup.children);
       if (fullPanelHits.length > 0) { hideVRPanel(); return; }
+    }
+
+    // Check map UI elements (icon, close, floor buttons) before hotspots / map plane navigation
+    const mapUITargets = [];
+    if (vrMinimapActive) {
+      mapUITargets.push(vrMinimapCloseBtn);
+      if (TOUR.floors && TOUR.floors.length > 1) {
+        mapUITargets.push(vrMinimapFloorPrev, vrMinimapFloorNext);
+      }
+    } else if (vrMinimapIcon.visible) {
+      mapUITargets.push(vrMinimapIcon);
+    }
+    if (mapUITargets.length > 0) {
+      const uiHits = raycaster.intersectObjects(mapUITargets);
+      if (uiHits.length > 0) {
+        const action = uiHits[0].object.userData._mapAction;
+        if (action === 'activate') activateVRMinimap();
+        else if (action === 'close') deactivateVRMinimap();
+        else if (action === 'floorPrev') switchVRMapFloor(-1);
+        else if (action === 'floorNext') switchVRMapFloor(+1);
+        return;
+      }
     }
 
     // If user is currently gazing at a hotspot, trigger fires it instantly
@@ -3277,13 +3316,7 @@ ${threeJsSrc}
       return;
     }
 
-    // No hotspot hit — check floating minimap (to activate it)
-    if (vrMinimapMesh.visible) {
-      const mapHits = raycaster.intersectObject(vrMinimapMesh);
-      if (mapHits.length > 0) {
-        activateVRMinimap();
-      }
-    }
+    // (Floating minimap removed — activation handled by the bottom-middle icon above)
   }
 
 
@@ -3305,6 +3338,13 @@ ${threeJsSrc}
             renderer.xr.setSession(session);
             // Mark session start time — gaze + auto-audio are suppressed for VR_INITIAL_GRACE seconds so the first frame can paint
             vrSessionStartTime = performance.now();
+            // Reposition the bottom-middle map icon for the new VR session (deferred one frame to let camera settle)
+            setTimeout(function() {
+              if (renderer.xr.isPresenting) {
+                vrMinimapIcon.visible = !vrMinimapHidden;
+                repositionMapIcon();
+              }
+            }, 200);
             // Re-queue current scene's auto-play audio (cleared above) so it fires after the grace period
             var _curScn = TOUR.scenes.find(function(_s){ return _s.id === currentSceneId; });
             var _curAuto = _curScn && _curScn.hotspots.find(function(h){ return h.type === 'audio' && h.audioAutoplay && h.audioData; });
@@ -3313,6 +3353,17 @@ ${threeJsSrc}
               btn.textContent = 'Enter VR';
               btn.style.background = '#ff7a00';
               vrSessionStartTime = 0;
+              // Hide all VR map UI when leaving VR
+              vrMinimapIcon.visible = false;
+              vrMinimapFloorPrev.visible = false;
+              vrMinimapFloorNext.visible = false;
+              vrMinimapCloseBtn.visible = false;
+              vrMinimapMesh.visible = false;
+              vrMinimapActive = false;
+              // Reset button hover textures so they don't appear pre-highlighted on re-entry
+              setFloorButtonHover('prev', false);
+              setFloorButtonHover('next', false);
+              setCloseButtonHover(false);
             });
           }).catch(err => {
             btn.textContent = 'VR Error: ' + err.message;
@@ -3425,9 +3476,18 @@ ${threeJsSrc}
       return;
     }
 
-    const hits = raycaster.intersectObjects(vrHotspotGroup.children);
-    const hsHit = hits.find(h => h.object.userData && h.object.userData.type);
-    let hitTarget = hsHit ? hsHit.object : null;
+    // Gaze ONLY targets hotspots. Map UI (icon/close/arrows) is controller-trigger only.
+    // When the enlarged map is open, suppress hotspot gaze entirely (no accidental nav during map use).
+    let gazeTargets;
+    const isMapUITarget = false;
+    if (vrMinimapActive) {
+      gazeTargets = [];
+    } else {
+      gazeTargets = vrHotspotGroup.children;
+    }
+    const hits = raycaster.intersectObjects(gazeTargets);
+    const goodHit = hits.find(h => h.object.userData && h.object.userData.type);
+    let hitTarget = goodHit ? goodHit.object : null;
 
     // Grace period: keep target alive briefly when ray wanders off (but do NOT advance timer)
     if (!hitTarget && gazeTarget && gazeGrace < GAZE_GRACE) {
@@ -3438,15 +3498,18 @@ ${threeJsSrc}
     }
 
     if (hitTarget) {
-      // Hotspots live inside vrHotspotGroup (rotated by scene yaw) — use world transforms so the fill plane lands on the hotspot
       const hsWorldPos = hitTarget.getWorldPosition(new THREE.Vector3());
       const hsWorldQuat = hitTarget.getWorldQuaternion(new THREE.Quaternion());
       gazeFillMesh.position.copy(hsWorldPos);
       gazeFillMesh.quaternion.copy(hsWorldQuat);
-      // Push slightly toward camera so the fill sits in front of the hotspot
+      // Push slightly toward camera so the fill sits in front of the target
       const toCamera = camPos.clone().sub(hsWorldPos).normalize();
-      gazeFillMesh.position.add(toCamera.multiplyScalar(0.3));
+      // Map UI elements are flat planes sized in meters; hotspots are larger and farther — use smaller offset for UI
+      const fillOffset = isMapUITarget ? 0.05 : 0.3;
+      gazeFillMesh.position.add(toCamera.multiplyScalar(fillOffset));
       gazeFillMesh.visible = true;
+
+      // Map UI hover removed — controller-trigger only, no gaze on map elements
 
       if (gazeTarget === hitTarget) {
         gazeTimer += dt;
@@ -3465,7 +3528,6 @@ ${threeJsSrc}
         gazeFillMat.needsUpdate = true;
       }
       const pct = Math.min(gazeTimer / GAZE_DWELL, 1);
-      // Rebuild pie: clockwise sweep from top — reveals the hotspot image progressively
       gazeFillMesh.geometry.dispose();
       const arc = Math.max(0.05, pct) * Math.PI * 2;
       gazeFillMesh.geometry = new THREE.CircleGeometry(6, 48, -Math.PI / 2, arc);
@@ -3487,6 +3549,104 @@ ${threeJsSrc}
     }
   }
 
+  // Pre-decoded floor plan images, keyed by floor id — avoids async image-load freezes during floor switching
+  const floorImageCache = {};
+  function preloadFloorImages() {
+    if (!TOUR.floors) return;
+    // Pre-decode floor plan images into the browser's image cache so subsequent loads in
+    // switchVRMapFloor are instant. floorImageCache itself is no longer read directly —
+    // switchVRMapFloor creates a fresh Image() and loads from floorPlanData each time.
+    for (const f of TOUR.floors) {
+      if (!f.floorPlanData) continue;
+      const img = new Image();
+      floorImageCache[f.id] = { img: img, ready: false };
+      img.onload = function() { floorImageCache[f.id].ready = true; };
+      img.src = f.floorPlanData;
+    }
+  }
+  preloadFloorImages();
+
+  // Canvas-texture helpers for the 3D map UI meshes
+  function drawMapIconTexture(canvas) {
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    // Editor-style: black bg, orange border, map-pin glyph
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(8, 8, W - 16, H - 16, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#ff7a00';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    // Map-pin glyph (centered)
+    ctx.fillStyle = '#ff7a00';
+    ctx.strokeStyle = '#ff7a00';
+    ctx.lineWidth = 6;
+    const cx = W / 2, cy = H / 2 - 10;
+    // Pin head circle
+    ctx.beginPath();
+    ctx.arc(cx, cy - 20, 30, 0, Math.PI * 2);
+    ctx.fill();
+    // Pin body (teardrop tail) — triangle from circle bottom to point
+    ctx.beginPath();
+    ctx.moveTo(cx - 22, cy - 5);
+    ctx.lineTo(cx + 22, cy - 5);
+    ctx.lineTo(cx, cy + 50);
+    ctx.closePath();
+    ctx.fill();
+    // Small hole in pin head (white dot)
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 20, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // Label "MAP" under pin
+    ctx.fillStyle = '#ff7a00';
+    ctx.font = 'bold 32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MAP', cx, H - 28);
+  }
+
+  function drawFloorButtonTexture(canvas, arrow, hovered) {
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    // Editor's .minimap-floor-btn style
+    ctx.fillStyle = hovered ? '#ff7a00' : 'rgba(0,0,0,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(8, 8, W - 16, H - 16, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#ff7a00';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.fillStyle = hovered ? '#fff' : '#ff7a00';
+    ctx.font = 'bold 220px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(arrow, W / 2, H / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawCloseButtonTexture(canvas, hovered) {
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    // Editor's #minimap-close style
+    ctx.fillStyle = hovered ? '#c00' : 'rgba(0,0,0,0.85)';
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, W / 2 - 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hovered ? '#c00' : '#666';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 80px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✕', W / 2, H / 2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
   // VR Minimap HUD (3D plane with canvas texture)
   const vrMinimapCanvas = document.createElement('canvas');
   let mapAspect = 0.754; // default landscape, updated when image loads
@@ -3498,20 +3658,156 @@ ${threeJsSrc}
   vrMinimapTex.minFilter = THREE.LinearFilter;
   vrMinimapTex.magFilter = THREE.LinearFilter;
 
-  function getSmallPlaneSize() {
-    // Landscape: wider. Portrait: taller.
-    const w = mapAspect < 1 ? 1.2 : 0.8;
-    return { w: w, h: w * mapAspect };
-  }
-
-  const smallSize = getSmallPlaneSize();
   const vrMinimapMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(smallSize.w, smallSize.h),
+    new THREE.PlaneGeometry(1.2, 1.2 * mapAspect),
     new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapMesh.renderOrder = 999;
   scene.add(vrMinimapMesh);
   vrMinimapMesh.visible = false;
+
+  // --- New 3D map UI meshes ---
+
+  // Bottom-middle activation icon (replaces head-locked floating minimap)
+  const vrMinimapIconCanvas = document.createElement('canvas');
+  vrMinimapIconCanvas.width = 256;
+  vrMinimapIconCanvas.height = 256;
+  drawMapIconTexture(vrMinimapIconCanvas);
+  const vrMinimapIconTex = new THREE.CanvasTexture(vrMinimapIconCanvas);
+  vrMinimapIconTex.minFilter = THREE.LinearFilter;
+  vrMinimapIconTex.magFilter = THREE.LinearFilter;
+  const vrMinimapIcon = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.5),
+    new THREE.MeshBasicMaterial({ map: vrMinimapIconTex, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapIcon.renderOrder = 998;
+  vrMinimapIcon.userData._mapAction = 'activate';
+  vrMinimapIcon.visible = false; // shown only once VR session is active
+  scene.add(vrMinimapIcon);
+
+  // Floor-prev button
+  const vrMinimapFloorPrevCanvas = document.createElement('canvas');
+  vrMinimapFloorPrevCanvas.width = 256;
+  vrMinimapFloorPrevCanvas.height = 384;
+  drawFloorButtonTexture(vrMinimapFloorPrevCanvas, '◀', false);
+  const vrMinimapFloorPrevTex = new THREE.CanvasTexture(vrMinimapFloorPrevCanvas);
+  vrMinimapFloorPrevTex.minFilter = THREE.LinearFilter;
+  vrMinimapFloorPrevTex.magFilter = THREE.LinearFilter;
+  const vrMinimapFloorPrev = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.0, 2.5),
+    new THREE.MeshBasicMaterial({ map: vrMinimapFloorPrevTex, transparent: true, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapFloorPrev.renderOrder = 1000;
+  vrMinimapFloorPrev.userData._mapAction = 'floorPrev';
+  vrMinimapFloorPrev.userData._gazeDwell = 1.2;
+  vrMinimapFloorPrev.visible = false;
+  scene.add(vrMinimapFloorPrev);
+
+  // Floor-next button
+  const vrMinimapFloorNextCanvas = document.createElement('canvas');
+  vrMinimapFloorNextCanvas.width = 256;
+  vrMinimapFloorNextCanvas.height = 384;
+  drawFloorButtonTexture(vrMinimapFloorNextCanvas, '▶', false);
+  const vrMinimapFloorNextTex = new THREE.CanvasTexture(vrMinimapFloorNextCanvas);
+  vrMinimapFloorNextTex.minFilter = THREE.LinearFilter;
+  vrMinimapFloorNextTex.magFilter = THREE.LinearFilter;
+  const vrMinimapFloorNext = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.0, 2.5),
+    new THREE.MeshBasicMaterial({ map: vrMinimapFloorNextTex, transparent: true, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapFloorNext.renderOrder = 1000;
+  vrMinimapFloorNext.userData._mapAction = 'floorNext';
+  vrMinimapFloorNext.userData._gazeDwell = 1.2;
+  vrMinimapFloorNext.visible = false;
+  scene.add(vrMinimapFloorNext);
+
+  // Close button
+  const vrMinimapCloseBtnCanvas = document.createElement('canvas');
+  vrMinimapCloseBtnCanvas.width = 128;
+  vrMinimapCloseBtnCanvas.height = 128;
+  drawCloseButtonTexture(vrMinimapCloseBtnCanvas, false);
+  const vrMinimapCloseBtnTex = new THREE.CanvasTexture(vrMinimapCloseBtnCanvas);
+  vrMinimapCloseBtnTex.minFilter = THREE.LinearFilter;
+  vrMinimapCloseBtnTex.magFilter = THREE.LinearFilter;
+  const vrMinimapCloseBtn = new THREE.Mesh(
+    new THREE.CircleGeometry(0.4, 32),
+    new THREE.MeshBasicMaterial({ map: vrMinimapCloseBtnTex, transparent: true, side: THREE.DoubleSide, depthTest: false })
+  );
+  vrMinimapCloseBtn.renderOrder = 1000;
+  vrMinimapCloseBtn.userData._mapAction = 'close';
+  vrMinimapCloseBtn.userData._gazeDwell = 1.8;
+  vrMinimapCloseBtn.visible = false;
+  scene.add(vrMinimapCloseBtn);
+
+  // --- Reposition helpers ---
+
+  // Icon is HEAD-LOCKED — follows the user's head every frame so it stays in peripheral lower-left.
+  // Called from animate loop when icon should be visible. Renamed from repositionMapIcon to make
+  // its per-frame nature explicit.
+  function updateMapIconPosition() {
+    if (!renderer.xr.isPresenting) return;
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    const camRight = new THREE.Vector3();
+    const camUp = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+    camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+    camUp.crossVectors(camRight, camDir).normalize();
+    // Place in peripheral lower-left, head-locked (more down and more left for easier reach)
+    vrMinimapIcon.position.copy(camPos)
+      .add(camDir.clone().multiplyScalar(1.5))
+      .add(camRight.clone().multiplyScalar(-0.9))
+      .add(camUp.clone().multiplyScalar(-0.8));
+    vrMinimapIcon.lookAt(camPos);
+  }
+  // Keep the old name as an alias so any pre-existing callers don't break
+  function repositionMapIcon() { updateMapIconPosition(); }
+
+  function repositionFloorButtons() {
+    if (!vrMinimapActive) return;
+    const bigW = vrMinimapMesh.geometry.parameters.width;
+    const mapRight = new THREE.Vector3(1, 0, 0).applyQuaternion(vrMinimapMesh.quaternion);
+    // OUTSIDE map, BIG (2m wide) and CLOSE to edge (gap 0.1m) so they're easy to hit with controller laser
+    const halfBtn = 1.0;
+    const gap = 0.1;
+    const offset = bigW / 2 + gap + halfBtn;
+    vrMinimapFloorPrev.position.copy(vrMinimapMesh.position)
+      .add(mapRight.clone().multiplyScalar(-offset));
+    vrMinimapFloorNext.position.copy(vrMinimapMesh.position)
+      .add(mapRight.clone().multiplyScalar(offset));
+    vrMinimapFloorPrev.quaternion.copy(vrMinimapMesh.quaternion);
+    vrMinimapFloorNext.quaternion.copy(vrMinimapMesh.quaternion);
+  }
+
+  function repositionCloseButton() {
+    if (!vrMinimapActive) return;
+    const bigW = vrMinimapMesh.geometry.parameters.width;
+    const bigH = vrMinimapMesh.geometry.parameters.height;
+    const mapRight = new THREE.Vector3(1, 0, 0).applyQuaternion(vrMinimapMesh.quaternion);
+    const mapUp = new THREE.Vector3(0, 1, 0).applyQuaternion(vrMinimapMesh.quaternion);
+    // OUTSIDE map, just above the top-right corner
+    vrMinimapCloseBtn.position.copy(vrMinimapMesh.position)
+      .add(mapRight.clone().multiplyScalar(bigW / 2 + 0.4))
+      .add(mapUp.clone().multiplyScalar(bigH / 2 + 0.4));
+    vrMinimapCloseBtn.quaternion.copy(vrMinimapMesh.quaternion);
+  }
+
+  function setFloorButtonHover(which, hovered) {
+    if (which === 'prev') {
+      drawFloorButtonTexture(vrMinimapFloorPrevCanvas, '◀', hovered);
+      vrMinimapFloorPrevTex.needsUpdate = true;
+    } else {
+      drawFloorButtonTexture(vrMinimapFloorNextCanvas, '▶', hovered);
+      vrMinimapFloorNextTex.needsUpdate = true;
+    }
+  }
+
+  function setCloseButtonHover(hovered) {
+    drawCloseButtonTexture(vrMinimapCloseBtnCanvas, hovered);
+    vrMinimapCloseBtnTex.needsUpdate = true;
+  }
   let vrMinimapActive = false;
   let mapZoom = 1.0;
   let mapPanX = 0, mapPanY = 0;
@@ -3521,7 +3817,7 @@ ${threeJsSrc}
   let mapViewFloorId = null; // floor shown on map (may differ from actual floor when browsing)
   let mapFloorSwitchCooldown = 0; // prevent rapid switching
 
-  // Update everything when floor plan image loads
+  // Update canvas size when floor plan image loads (geometry rebuild happens in activateVRMinimap / switchVRMapFloor)
   if (minimapFloorImg) {
     minimapFloorImg.onload = function() {
       mapAspect = this.naturalHeight / this.naturalWidth;
@@ -3530,16 +3826,11 @@ ${threeJsSrc}
       if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
       vrMinimapCanvas.width = mapCanvasW;
       vrMinimapCanvas.height = mapCanvasH;
-      // Rebuild geometry with actual aspect ratio
-      const sz = getSmallPlaneSize();
-      vrMinimapMesh.geometry.dispose();
-      vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
       mapImageReady = true;
       drawMinimap();
       drawVRMinimap();
       vrMinimapTex.needsUpdate = true;
     };
-    // If already loaded (base64 data URL)
     if (minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
       minimapFloorImg.onload();
     }
@@ -3552,60 +3843,89 @@ ${threeJsSrc}
 
     const activeMode = vrMinimapActive;
 
+    // Reserved top strip for floor name banner (NOT inside floor plan)
+    const hdrScale = Math.max(1, W / 1000);
+    const hdrFontSize = Math.round(24 * hdrScale);
+    const bannerH = hdrFontSize + 32; // banner takes this many pixels at the top
+    const mapTop = bannerH + 4;       // floor plan starts here
+    const mapH = H - mapTop - 4;      // floor plan available height
+    const mapW = W - 8;               // floor plan available width (4px padding each side)
+
     ctx.save();
     if (activeMode && mapZoom > 1) {
-      // Clamp pan so we don't scroll off the image
-      const maxPanX = (W * (mapZoom - 1)) / 2;
-      const maxPanY = (H * (mapZoom - 1)) / 2;
+      const maxPanX = (mapW * (mapZoom - 1)) / 2;
+      const maxPanY = (mapH * (mapZoom - 1)) / 2;
       mapPanX = Math.max(-maxPanX, Math.min(maxPanX, mapPanX));
       mapPanY = Math.max(-maxPanY, Math.min(maxPanY, mapPanY));
-      // Zoom centered on canvas with pan offset
-      ctx.translate(W / 2 + mapPanX, H / 2 + mapPanY);
+      ctx.translate(W / 2 + mapPanX, mapTop + mapH / 2 + mapPanY);
       ctx.scale(mapZoom, mapZoom);
-      ctx.translate(-W / 2, -H / 2);
+      ctx.translate(-W / 2, -(mapTop + mapH / 2));
     }
 
-    // Background: floor plan or dark box
+    // Background floor plan — drawn into the reserved area below the banner
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(4, 4, W - 8, H - 8, 12);
+    ctx.roundRect(4, mapTop, mapW, mapH, 12);
     ctx.clip();
     if (minimapFloorImg && minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
-      ctx.drawImage(minimapFloorImg, 0, 0, W, H);
-      // Only dim slightly when not active — full brightness when zoomed in
+      // Letterbox the image inside the map area — canvas dims stay constant across floor switches,
+      // so we fit the image preserving its aspect ratio (no stretching).
+      const imgAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
+      const areaAspect = mapH / mapW;
+      let dw, dh, dx, dy;
+      if (imgAspect < areaAspect) {
+        dw = mapW; dh = mapW * imgAspect;
+        dx = 4; dy = mapTop + (mapH - dh) / 2;
+      } else {
+        dh = mapH; dw = mapH / imgAspect;
+        dx = 4 + (mapW - dw) / 2; dy = mapTop;
+      }
+      // Fill the letterbox area with dark first
+      ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
+      ctx.fillRect(4, mapTop, mapW, mapH);
+      ctx.drawImage(minimapFloorImg, dx, dy, dw, dh);
       if (!activeMode) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(4, mapTop, mapW, mapH);
       }
     } else {
       ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(4, mapTop, mapW, mapH);
     }
     ctx.restore();
-    ctx.beginPath();
-    ctx.roundRect(4, 4, W - 8, H - 8, 12);
-    ctx.strokeStyle = 'rgba(255,122,0,0.5)';
-    ctx.lineWidth = activeMode ? 6 : 3;
-    ctx.stroke();
+
+    if (!activeMode) {
+      ctx.beginPath();
+      ctx.roundRect(4, mapTop, mapW, mapH, 12);
+      ctx.strokeStyle = 'rgba(255,122,0,0.5)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
 
     const floorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
-    if (!scenes.length) { ctx.restore(); vrMinimapTex.needsUpdate = true; return; }
-    const pad = Math.max(40, W * 0.04);
-    const positions = getScenePositions(W, H, pad, floorId);
-    const nodeScale = Math.max(1, W / 512) * 0.8; // scale markers for higher-res canvas
+    if (!scenes.length) { ctx.restore(); drawFloorNameBanner(); vrMinimapTex.needsUpdate = true; return; }
+    const pad = Math.max(40, mapW * 0.04);
+    // Pass the reduced drawing area to getScenePositions by offsetting positions in Y
+    const positions = getScenePositions(mapW, mapH, pad, floorId);
+    // Shift all positions down by mapTop and right by 4 (the padding offset)
+    for (const id in positions) {
+      positions[id].x += 4;
+      positions[id].y += mapTop;
+    }
 
-    // Scale down markers when zoomed in so they stay proportional
+    // Use milder hotspot scale (Issue 3 fix)
+    const nodeScale = Math.max(1, W / 1000);
     const zoomScale = activeMode && mapZoom > 1 ? 1.2 / mapZoom : 1;
 
     // Connection lines
-    ctx.lineWidth = 3 * nodeScale * zoomScale;
+    ctx.lineWidth = 1.5 * nodeScale * zoomScale;
     scenes.forEach(s => {
       s.hotspots.forEach(hs => {
         if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
           const from = positions[s.id];
           const to = positions[parseInt(hs.target)];
-          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.7)' : 'rgba(255,255,255,0.25)';
+          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.6)' : 'rgba(255,255,255,0.25)';
           ctx.beginPath();
           ctx.moveTo(from.x, from.y);
           ctx.lineTo(to.x, to.y);
@@ -3614,120 +3934,106 @@ ${threeJsSrc}
       });
     });
 
-    // Scene nodes
+    // Scene nodes — editor radii (current 16, others 12)
     scenes.forEach(s => {
       const p = positions[s.id];
       if (!p) return;
       const isCurrent = s.id === currentSceneId;
-      const r = (isCurrent ? 32 : 24) * nodeScale * zoomScale;
+      const isHovered = s.id === mapHoveredSceneId;
+      const r = (isCurrent ? 16 : 12) * nodeScale * zoomScale;
 
-      // Pulsing click target ring when active
-      if (activeMode && !isCurrent) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 2 * nodeScale * zoomScale;
-        ctx.setLineDash([6 * nodeScale * zoomScale, 4 * nodeScale * zoomScale]);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, r + 12 * nodeScale * zoomScale, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 20 * nodeScale * zoomScale; }
+      if (isCurrent) { ctx.shadowColor = '#ff7a00'; ctx.shadowBlur = 16 * nodeScale * zoomScale; }
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isCurrent ? '#ff7a00' : 'rgba(255, 160, 50, 0.6)';
       ctx.fill();
-      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = (isCurrent ? 3 : 2) * nodeScale * zoomScale;
+      ctx.strokeStyle = isCurrent ? '#fff' : 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = (isCurrent ? 2 : 1) * nodeScale * zoomScale;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Nav hotspot dots only
-      const navHotspots = s.hotspots.filter(h => h.type === 'nav');
-      navHotspots.forEach((hs, hi) => {
-        const a = (hi / navHotspots.length) * Math.PI * 2 - Math.PI / 2;
+      // Nav hotspot dots
+      const navHs = s.hotspots.filter(h => h.type === 'nav');
+      navHs.forEach((hs, hi) => {
+        const a = (hi / navHs.length) * Math.PI * 2 - Math.PI / 2;
         ctx.beginPath();
-        ctx.arc(p.x + (r + 12 * nodeScale * zoomScale) * Math.cos(a), p.y + (r + 12 * nodeScale * zoomScale) * Math.sin(a), 5 * nodeScale * zoomScale, 0, Math.PI * 2);
+        ctx.arc(p.x + (r + 8 * nodeScale * zoomScale) * Math.cos(a), p.y + (r + 8 * nodeScale * zoomScale) * Math.sin(a), 4 * nodeScale * zoomScale, 0, Math.PI * 2);
         ctx.fillStyle = '#ff7a00';
         ctx.fill();
       });
 
-      // Short name inside circle (black text)
-      const fontSize = Math.round(Math.min(r * 0.9, 20 * nodeScale * zoomScale));
-      ctx.fillStyle = isCurrent ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)';
-      ctx.font = 'bold ' + fontSize + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const abbr = s.name.length > 3 ? s.name.substring(0, 3) : s.name;
-      ctx.fillText(abbr, p.x, p.y);
-      ctx.textBaseline = 'alphabetic';
-
-      // Full label only on hover
-      if (s.id === mapHoveredSceneId) {
-        const labelFontSize = Math.round(16 * nodeScale * zoomScale);
-        const labelText = s.name.length > 22 ? s.name.substring(0, 21) + '..' : s.name;
-        ctx.font = 'bold ' + labelFontSize + 'px sans-serif';
-        const tw = ctx.measureText(labelText).width;
-        const lx = p.x, ly = p.y + r + 22 * nodeScale * zoomScale;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(lx - tw / 2 - 6, ly - labelFontSize + 2, tw + 12, labelFontSize + 6);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(labelText, lx, ly);
+      // Label — match editor style
+      if (activeMode && (isCurrent || isHovered)) {
+        ctx.save();
+        const label = s.name;
+        const labelFontSize = Math.round(12 * nodeScale * zoomScale);
+        ctx.font = (isCurrent ? 'bold ' : '') + labelFontSize + 'px sans-serif';
+        const tw = ctx.measureText(label).width;
+        const lx = p.x - tw / 2 - 6, ly = p.y + r + 6;
+        ctx.fillStyle = 'rgba(10,10,24,0.85)';
+        ctx.strokeStyle = isCurrent ? 'rgba(255,122,0,0.5)' : 'rgba(0,240,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(lx, ly, tw + 12, labelFontSize + 8, 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = isCurrent ? '#ff7a00' : '#00f0ff';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, p.x, ly + labelFontSize + 2);
+        ctx.restore();
       }
-
     });
 
     ctx.restore(); // undo zoom/pan transform
 
-    // Header — always on top, not affected by zoom — show floor name
-    const viewFloor = (vrMinimapActive && mapViewFloorId) ? (TOUR.floors || []).find(f => f.id === mapViewFloorId) : getCurrentFloor();
-    const headerFloorName = viewFloor ? viewFloor.name : 'PLAN VIEW';
-    const hdrScale = Math.max(1, W / 512);
-    const hdrFontSize = Math.round(24 * hdrScale);
-    const hdrY = 16 + hdrFontSize;
-    ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
-    if (activeMode && TOUR.floors && TOUR.floors.length > 1) {
-      // Show arrows + floor name centered
-      const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
-      const hdrText = '\\u25C0  ' + headerFloorName + '  \\u25B6';
-      const tw = ctx.measureText(hdrText).width;
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
-      ctx.beginPath();
-      ctx.roundRect(W / 2 - tw / 2 - 24, 8, tw + 48, hdrFontSize + 32, 12);
-      ctx.fill();
-      ctx.strokeStyle = '#ff7a00';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.95)' : '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.fillText(hdrText, W / 2, hdrY);
-      // Small hint
-      ctx.font = Math.round(14 * hdrScale) + 'px sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillText('click \\u25C0\\u25B6 = switch floor  |  thumbstick = zoom  |  trigger drag = pan  |  grip = close', W / 2, hdrY + hdrFontSize + 4);
-    } else {
-      const tw = ctx.measureText(headerFloorName).width;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.beginPath();
-      ctx.roundRect(14, 10, tw + 20, hdrFontSize + 10, 8);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,122,0,0.95)';
-      ctx.textAlign = 'left';
-      ctx.fillText(headerFloorName, 24, hdrY);
-    }
+    // Floor name banner — drawn LAST so it appears above floor plan, in the reserved top strip
+    drawFloorNameBanner();
 
-    // Zoom indicator when active and zoomed
+    // Zoom indicator
     if (activeMode && mapZoom !== 1) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(W - 180, 10, 170, 36);
+      ctx.fillRect(W - 180, mapTop + 4, 170, 36);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText('Zoom: ' + mapZoom.toFixed(1) + 'x', W - 20, 34);
+      ctx.fillText('Zoom: ' + mapZoom.toFixed(1) + 'x', W - 20, mapTop + 28);
     }
 
     vrMinimapTex.needsUpdate = true;
+
+    function drawFloorNameBanner() {
+      const viewFloor = (vrMinimapActive && mapViewFloorId) ? (TOUR.floors || []).find(f => f.id === mapViewFloorId) : getCurrentFloor();
+      const baseName = viewFloor ? viewFloor.name : 'PLAN VIEW';
+      // Append "[X/N]" floor index so user always knows which floor is shown
+      let headerFloorName = baseName;
+      if (TOUR.floors && TOUR.floors.length > 1 && viewFloor) {
+        const sortedFloors = [...TOUR.floors].sort((a, b) => a.level - b.level);
+        const idx = sortedFloors.findIndex(f => f.id === viewFloor.id);
+        if (idx >= 0) headerFloorName = baseName + '  [' + (idx + 1) + '/' + sortedFloors.length + ']';
+      }
+      const isViewingOtherFloor = mapViewFloorId && mapViewFloorId !== getCurrentFloorId();
+      ctx.save();
+      ctx.font = 'bold ' + hdrFontSize + 'px sans-serif';
+      const tw = ctx.measureText(headerFloorName).width;
+      const bgX = (W - tw) / 2 - 16;
+      const bgY = 4;
+      ctx.fillStyle = 'rgba(10,10,24,0.85)';
+      ctx.beginPath();
+      ctx.roundRect(bgX, bgY, tw + 32, bannerH - 8, 8);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,122,0,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = isViewingOtherFloor ? 'rgba(100,200,255,0.95)' : '#ff7a00';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(headerFloorName, W / 2, bgY + (bannerH - 8) / 2);
+      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
+    }
   }
+
+  // (auto-switch test removed)
 
   function activateVRMinimap() {
     vrMinimapActive = true;
@@ -3737,163 +4043,185 @@ ${threeJsSrc}
     mapPanY = 0;
     mapViewFloorId = getCurrentFloorId();
     mapFloorSwitchCooldown = 0;
-    vrMinimapMesh.geometry.dispose();
-    // Large plane that almost fills the view — respect actual aspect ratio
+
+    // Make sure the map plane geometry matches the current floor aspect
     let bigW, bigH;
-    if (mapAspect < 1) {
-      // Landscape: width-dominant
-      bigW = 7;
-      bigH = bigW * mapAspect;
-    } else {
-      // Portrait: height-dominant
-      bigH = 7;
-      bigW = bigH / mapAspect;
-    }
+    if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
+    else { bigH = 7; bigW = bigH / mapAspect; }
+    vrMinimapMesh.geometry.dispose();
     vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
     vrMinimapMesh.material.opacity = 0.97;
     vrMinimapMesh.material.depthTest = true;
     vrMinimapMesh.material.depthWrite = true;
-    drawVRMinimap();
-    // Position centered in front of viewer
+    vrMinimapMesh.visible = true;
+
+    // Position centered in front of viewer — flatten to horizontal so the map is always vertical
+    // even when the user activated it while looking down at the bottom-middle icon.
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
     const camDir = new THREE.Vector3();
     xrCam.getWorldPosition(camPos);
     xrCam.getWorldDirection(camDir);
+    // Drop the pitch — keep only the horizontal (yaw) component
+    camDir.y = 0;
+    if (camDir.lengthSq() < 0.0001) camDir.set(0, 0, -1);
+    camDir.normalize();
+    // Place map at eye level forward (not following the user's downward gaze)
     vrMinimapMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(3.5));
+    // lookAt(camPos) makes the plane face the user with vertical orientation (since map y == camPos y)
     vrMinimapMesh.lookAt(camPos);
     vrMinimapMesh.updateMatrixWorld(true);
+
+    // Hide the bottom-middle icon while map is enlarged
+    vrMinimapIcon.visible = false;
+
+    // Show + position floor buttons (only if there are 2+ floors)
+    const hasMultiFloor = TOUR.floors && TOUR.floors.length > 1;
+    vrMinimapFloorPrev.visible = hasMultiFloor;
+    vrMinimapFloorNext.visible = hasMultiFloor;
+    if (hasMultiFloor) repositionFloorButtons();
+
+    // Show + position close button
+    vrMinimapCloseBtn.visible = true;
+    repositionCloseButton();
+
+    drawVRMinimap();
   }
 
   function deactivateVRMinimap() {
+    // Reset button hover textures so they don't appear pre-highlighted on next open
+    setFloorButtonHover('prev', false);
+    setFloorButtonHover('next', false);
+    setCloseButtonHover(false);
     vrMinimapActive = false;
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
     mapDragStart = null;
     mapTriggerHeld = false;
-    // Reset to actual current floor and reload its floor plan image
+    // Reset to actual current floor — read from cache, no async load
     const actualFloorId = getCurrentFloorId();
     mapViewFloorId = actualFloorId;
-    const curFloor = TOUR.floors.find(f => f.id === actualFloorId);
-    const fpData = curFloor ? curFloor.floorPlanData : null;
-    if (fpData) {
-      minimapFloorImg = new Image();
-      minimapFloorImg.onload = function() {
-        mapAspect = this.naturalHeight / this.naturalWidth;
-        mapCanvasW = Math.min(this.naturalWidth, 4096);
-        mapCanvasH = Math.round(mapCanvasW * mapAspect);
-        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-        vrMinimapCanvas.width = mapCanvasW;
-        vrMinimapCanvas.height = mapCanvasH;
-        const sz = getSmallPlaneSize();
-        vrMinimapMesh.geometry.dispose();
-        vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
-        mapImageReady = true;
-        drawVRMinimap();
-        vrMinimapTex.needsUpdate = true;
-      };
-      minimapFloorImg.src = fpData;
+    const cached = floorImageCache[actualFloorId];
+
+    if (cached && cached.ready) {
+      minimapFloorImg = cached.img;
+      mapAspect = cached.aspect;
+      mapCanvasW = cached.w;
+      mapCanvasH = cached.h;
     } else {
       minimapFloorImg = null;
       mapAspect = 0.754;
       mapCanvasW = 2048;
       mapCanvasH = Math.round(2048 * mapAspect);
-      vrMinimapCanvas.width = mapCanvasW;
-      vrMinimapCanvas.height = mapCanvasH;
-      const sz = getSmallPlaneSize();
-      vrMinimapMesh.geometry.dispose();
-      vrMinimapMesh.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
-      drawVRMinimap();
     }
-    vrMinimapMesh.material.opacity = 0.85;
-    vrMinimapMesh.material.depthTest = false;
-    vrMinimapMesh.material.depthWrite = false;
+    vrMinimapCanvas.width = mapCanvasW;
+    vrMinimapCanvas.height = mapCanvasH;
+
+    // Map plane no longer used in small mode — hide it; the bottom-middle icon takes over
+    vrMinimapMesh.visible = false;
+    mapImageReady = true;
+
+    // Hide map UI elements
+    vrMinimapFloorPrev.visible = false;
+    vrMinimapFloorNext.visible = false;
+    vrMinimapCloseBtn.visible = false;
+
+    // Re-show the bottom-middle icon and reposition it
+    vrMinimapIcon.visible = !vrMinimapHidden;
+    repositionMapIcon();
+
+    drawVRMinimap();
+    vrMinimapTex.needsUpdate = true;
   }
 
   function switchVRMapFloor(direction) {
     if (!TOUR.floors || TOUR.floors.length <= 1) return;
+    // 1200ms cooldown absorbs the double-fire some Quest controllers produce per trigger press
+    if (performance.now() - mapFloorSwitchCooldown < 1200) return;
     const sorted = [...TOUR.floors].sort((a, b) => a.level - b.level);
     const curIdx = sorted.findIndex(f => f.id === mapViewFloorId);
-    const newIdx = direction > 0 ? Math.min(curIdx + 1, sorted.length - 1) : Math.max(curIdx - 1, 0);
+    // No wrap-around — edges bail silently
+    const newIdx = curIdx < 0 ? 0 : Math.max(0, Math.min(sorted.length - 1, curIdx + direction));
     if (newIdx === curIdx) return;
+
     mapViewFloorId = sorted[newIdx].id;
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
+    mapDragStart = null;
+    mapTriggerHeld = false;
+    mapDidDrag = false;
     mapFloorSwitchCooldown = performance.now();
-    const viewedFloor = sorted[newIdx];
-    if (viewedFloor.floorPlanData) {
-      mapImageReady = false;
-      minimapFloorImg = new Image();
-      minimapFloorImg.onload = function() {
+
+    const targetFloor = sorted[newIdx];
+
+    if (targetFloor.floorPlanData) {
+      // Load fresh image. DO NOT resize the canvas — that confuses the CanvasTexture buffer
+      // and the new content appears as a tiny region. Keep canvas dims constant; drawVRMinimap
+      // letterboxes the image to fit. Plane geometry also stays constant.
+      const newImg = new Image();
+      newImg.onload = function() {
+        minimapFloorImg = newImg;
         mapAspect = this.naturalHeight / this.naturalWidth;
-        mapCanvasW = Math.min(this.naturalWidth, 4096);
-        mapCanvasH = Math.round(mapCanvasW * mapAspect);
-        if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-        vrMinimapCanvas.width = mapCanvasW;
-        vrMinimapCanvas.height = mapCanvasH;
-        if (vrMinimapActive) {
-          let bigW, bigH;
-          if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
-          else { bigH = 7; bigW = bigH / mapAspect; }
-          vrMinimapMesh.geometry.dispose();
-          vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
-        }
         mapImageReady = true;
+        mapNeedsRedraw = true;
         drawVRMinimap();
         vrMinimapTex.needsUpdate = true;
       };
-      minimapFloorImg.src = viewedFloor.floorPlanData;
-    } else {
+      newImg.src = targetFloor.floorPlanData;
+      // Immediate visual feedback while the new image decodes — show dark with banner update
       minimapFloorImg = null;
-      mapImageReady = false;
+      mapNeedsRedraw = true;
+      drawVRMinimap();
+      vrMinimapTex.needsUpdate = true;
+    } else {
+      // No floor plan data → dark fallback
+      minimapFloorImg = null;
       mapAspect = 0.754;
-      mapCanvasW = 2048;
-      mapCanvasH = Math.round(2048 * mapAspect);
-      vrMinimapCanvas.width = mapCanvasW;
-      vrMinimapCanvas.height = mapCanvasH;
-      if (vrMinimapActive) {
-        let bigW, bigH;
-        if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
-        else { bigH = 7; bigW = bigH / mapAspect; }
-        vrMinimapMesh.geometry.dispose();
-        vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
-      }
+      mapImageReady = true;
+      mapNeedsRedraw = true;
       drawVRMinimap();
       vrMinimapTex.needsUpdate = true;
     }
   }
 
   function handleVRMinimapClick(uv) {
-    const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
-    let mx = uv.x * W;
-    let my = (1 - uv.y) * H; // canvas Y is flipped vs UV
-
-    // Check if click is on floor arrows in the header (raw coords, not zoom-adjusted)
+    // UV-BASED FALLBACK for floor switching: if the user trigger-clicks the bottom-left
+    // or bottom-right corner of the map (the 20% × 20% triangles), treat it as a floor
+    // switch even if the 3D arrow button missed. UV: x=0 left, x=1 right, y=0 BOTTOM (uv.y is canvas-flipped).
     if (TOUR.floors && TOUR.floors.length > 1) {
-      const hdrScale = Math.max(1, W / 512);
-      const hdrFontSize = Math.round(24 * hdrScale);
-      const headerH = 8 + hdrFontSize + 32;
-      if (my < headerH) {
-        if (performance.now() - mapFloorSwitchCooldown < 500) return true;
-        if (mx < W / 2) {
-          switchVRMapFloor(-1);
-        } else {
-          switchVRMapFloor(1);
-        }
-        return true;
-      }
+      const inLeft = uv.x < 0.2 && uv.y < 0.2;
+      const inRight = uv.x > 0.8 && uv.y < 0.2;
+      if (inLeft) { switchVRMapFloor(-1); return true; }
+      if (inRight) { switchVRMapFloor(+1); return true; }
     }
 
-    // Reverse the zoom/pan transform to get original canvas coordinates
+    const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+    // Mirror drawVRMinimap's reserved top-banner strip so hit-test aligns with rendered node positions
+    const hdrScale = Math.max(1, W / 1000);
+    const hdrFontSize = Math.round(24 * hdrScale);
+    const bannerH = hdrFontSize + 32;
+    const mapTop = bannerH + 4;
+    const mapH = H - mapTop - 4;
+    const mapW = W - 8;
+
+    let mx = uv.x * W;
+    let my = (1 - uv.y) * H;
+
+    // Reverse the zoom/pan transform — drawVRMinimap zooms around (W/2, mapTop + mapH/2)
     if (mapZoom > 1) {
       mx = (mx - W / 2 - mapPanX) / mapZoom + W / 2;
-      my = (my - H / 2 - mapPanY) / mapZoom + H / 2;
+      my = (my - (mapTop + mapH / 2) - mapPanY) / mapZoom + (mapTop + mapH / 2);
     }
-    const pad = Math.max(40, W * 0.04);
+    const pad = Math.max(40, mapW * 0.04);
     const clickFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
-    const positions = getScenePositions(W, H, pad, clickFloorId);
+    const positions = getScenePositions(mapW, mapH, pad, clickFloorId);
+    // Shift positions to match drawVRMinimap's offset (right by 4, down by mapTop)
+    for (const id in positions) {
+      positions[id].x += 4;
+      positions[id].y += mapTop;
+    }
     const floorScenes = getScenesForFloor(clickFloorId);
     let closest = null;
     let closestDist = Infinity;
@@ -3904,33 +4232,14 @@ ${threeJsSrc}
       const dist = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
       if (dist < closestDist) { closestDist = dist; closest = s; }
     }
-    const nodeScale = Math.max(1, W / 512) * 0.8;
-    const hitRadius = 40 * nodeScale;
+    const nodeScale = Math.max(1, W / 1000);
+    const hitRadius = 28 * nodeScale;
     if (closest && closestDist < hitRadius) {
       goToScene(closest.id);
-      drawVRMinimap(); // redraw to highlight new current scene
+      drawVRMinimap();
       return true;
     }
-    // Clicked empty space — do nothing (grip exits map)
     return false;
-  }
-
-  function updateVRMinimapPosition() {
-    if (vrMinimapActive) return; // don't move when active
-    const xrCam = renderer.xr.getCamera();
-    const camPos = new THREE.Vector3();
-    const camDir = new THREE.Vector3();
-    const camRight = new THREE.Vector3();
-    const camUp = new THREE.Vector3();
-    xrCam.getWorldPosition(camPos);
-    xrCam.getWorldDirection(camDir);
-    camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
-    camUp.crossVectors(camRight, camDir).normalize();
-    vrMinimapMesh.position.copy(camPos)
-      .add(camDir.clone().multiplyScalar(2.8))
-      .add(camRight.clone().multiplyScalar(-1.5))
-      .add(camUp.clone().multiplyScalar(-1.0));
-    vrMinimapMesh.lookAt(camPos);
   }
 
   // Update ray dot to show where laser points
@@ -4028,8 +4337,15 @@ ${threeJsSrc}
           reticleMesh.visible = false;
           gazeFillMesh.visible = false;
         }
-        vrMinimapMesh.visible = !vrMinimapHidden;
-        if (!vrMinimapHidden) updateVRMinimapPosition();
+        // Map plane is only shown when explicitly activated
+        if (!vrMinimapActive) vrMinimapMesh.visible = false;
+        // Floating icon — head-locked, visible only when map is not active and not hidden
+        if (!vrMinimapActive && !vrMinimapHidden) {
+          vrMinimapIcon.visible = true;
+          updateMapIconPosition();  // head-locked every frame
+        } else {
+          vrMinimapIcon.visible = false;
+        }
         updateRayDots();
 
         // Map controls: thumbstick = zoom, hold trigger + drag controller = pan
