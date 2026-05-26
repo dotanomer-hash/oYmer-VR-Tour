@@ -1991,6 +1991,11 @@ ${threeJsSrc}
   scene.add(vrHotspotGroup);
   const hsColorMap = { nav: 0xff7a00, info: 0x2196f3, media: 0x4caf50, audio: 0xe040fb };
   let currentAudio = null; // currently playing Audio element
+  // Block audio + gaze until panorama texture is ready and VR session has finished warming up
+  let panoReady = false;
+  let pendingAutoAudio = null;
+  let vrSessionStartTime = 0;
+  const VR_INITIAL_GRACE = 1.2; // seconds after Enter VR before audio + gaze can fire
   const raycaster = new THREE.Raycaster();
   raycaster.far = 500;
   const tempMatrix = new THREE.Matrix4();
@@ -2123,9 +2128,9 @@ ${threeJsSrc}
         vrHotspotGroup.add(coneMesh);
       }
 
-      // Invisible hit area for gaze/laser targeting (generous for easy gaze aiming)
+      // Invisible hit area for gaze/laser targeting — radius 12.8 (reduced from 16 for more precise gaze aim)
       const hitMesh = new THREE.Mesh(
-        new THREE.CircleGeometry(16, 16),
+        new THREE.CircleGeometry(12.8, 16),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide, depthTest: false })
       );
       hitMesh.position.copy(hsPos);
@@ -2582,6 +2587,9 @@ ${threeJsSrc}
     vrSceneYawTarget = (s.startLon || 0) * Math.PI / 180;
     vrSceneYawNeedsCalc = true;
 
+    // Reset readiness for this scene; will flip true once the panorama texture is fully loaded (see checkPanoReady in animate)
+    panoReady = false;
+    pendingAutoAudio = null;
     const tex = texCache[id] || new THREE.TextureLoader().load(s.imageData);
     texCache[id] = tex;
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -2677,10 +2685,10 @@ ${threeJsSrc}
     drawMinimap();
     drawVRMinimap();
 
-    // Auto-play audio hotspots for this scene
+    // Auto-play audio hotspots for this scene — defer until panorama is ready and VR grace period has passed
     stopAudio();
     const autoAudio = s.hotspots.find(h => h.type === 'audio' && h.audioAutoplay && h.audioData);
-    if (autoAudio) playAudio(autoAudio.audioData);
+    if (autoAudio) pendingAutoAudio = autoAudio.audioData;
 
     // Free GPU memory: dispose textures not for current scene or its nav neighbors
     pruneTexCache(id);
@@ -3288,13 +3296,23 @@ ${threeJsSrc}
         btn.onclick = () => {
           btn.textContent = 'Starting VR...';
           btn.style.background = '#555';
+          // Kill any audio queued by the autoplay listener from flat viewing — we'll re-queue it after the VR session warms up
+          stopAudio();
+          pendingAutoplay = null;
           navigator.xr.requestSession('immersive-vr').then(session => {
             btn.textContent = 'Exit VR';
             btn.style.background = '#c00';
             renderer.xr.setSession(session);
+            // Mark session start time — gaze + auto-audio are suppressed for VR_INITIAL_GRACE seconds so the first frame can paint
+            vrSessionStartTime = performance.now();
+            // Re-queue current scene's auto-play audio (cleared above) so it fires after the grace period
+            var _curScn = TOUR.scenes.find(function(_s){ return _s.id === currentSceneId; });
+            var _curAuto = _curScn && _curScn.hotspots.find(function(h){ return h.type === 'audio' && h.audioAutoplay && h.audioData; });
+            if (_curAuto) pendingAutoAudio = _curAuto.audioData;
             session.addEventListener('end', () => {
               btn.textContent = 'Enter VR';
               btn.style.background = '#ff7a00';
+              vrSessionStartTime = 0;
             });
           }).catch(err => {
             btn.textContent = 'VR Error: ' + err.message;
@@ -3315,7 +3333,7 @@ ${threeJsSrc}
 
   // Center reticle dot — always visible in VR so user knows where gaze points
   const reticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthTest: false });
-  const reticleMesh = new THREE.Mesh(new THREE.CircleGeometry(0.15, 24), reticleMat);
+  const reticleMesh = new THREE.Mesh(new THREE.CircleGeometry(0.225, 24), reticleMat);
   reticleMesh.renderOrder = 1000;
   reticleMesh.visible = false;
   scene.add(reticleMesh);
@@ -3333,6 +3351,17 @@ ${threeJsSrc}
     const now = performance.now();
     const dt = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
+
+    // Hold off gaze (reticle + dwell) until panorama texture is loaded and the VR session has had time to render the first frame
+    const inVrGrace = vrSessionStartTime > 0 && (now - vrSessionStartTime) / 1000 < VR_INITIAL_GRACE;
+    if (!panoReady || inVrGrace) {
+      reticleMesh.visible = false;
+      gazeFillMesh.visible = false;
+      gazeTarget = null;
+      gazeTimer = 0;
+      gazeGrace = 0;
+      return;
+    }
 
     const xrCam = renderer.xr.getCamera();
     const camPos = new THREE.Vector3();
@@ -3368,7 +3397,13 @@ ${threeJsSrc}
           if (gazeTarget === vrPanelCloseMesh) {
             gazeTimer += dt;
             gazeGrace = 0;
-            if (gazeTimer >= GAZE_DWELL) { hideVRPanel(); gazeTarget = null; gazeTimer = 0; gazeGrace = 0; gazeFillMesh.visible = false; }
+            if (gazeTimer >= GAZE_DWELL) {
+              hideVRPanel();
+              gazeTarget = null; gazeTimer = 0; gazeGrace = 0;
+              gazeFillMesh.visible = false;
+              gazeCooldown = GAZE_COOLDOWN; // prevent immediately re-triggering the info hotspot you're staring at
+              return; // CRITICAL: vrPanelCloseMesh is now null, so don't run the fill-positioning code below
+            }
           } else { gazeTarget = vrPanelCloseMesh; gazeTimer = 0; gazeGrace = 0; }
           // Show gaze fill on the close button
           gazeFillMesh.position.copy(vrPanelCloseMesh.getWorldPosition(new THREE.Vector3()));
@@ -3403,16 +3438,14 @@ ${threeJsSrc}
     }
 
     if (hitTarget) {
-      // Position the pie fill on the hotspot, slightly in front
-      gazeFillMesh.position.copy(hitTarget.position);
-      const toCamera = camPos.clone().sub(hitTarget.position).normalize();
+      // Hotspots live inside vrHotspotGroup (rotated by scene yaw) — use world transforms so the fill plane lands on the hotspot
+      const hsWorldPos = hitTarget.getWorldPosition(new THREE.Vector3());
+      const hsWorldQuat = hitTarget.getWorldQuaternion(new THREE.Quaternion());
+      gazeFillMesh.position.copy(hsWorldPos);
+      gazeFillMesh.quaternion.copy(hsWorldQuat);
+      // Push slightly toward camera so the fill sits in front of the hotspot
+      const toCamera = camPos.clone().sub(hsWorldPos).normalize();
       gazeFillMesh.position.add(toCamera.multiplyScalar(0.3));
-      if (hitTarget.userData.placement === 'floor') {
-        gazeFillMesh.lookAt(camPos);
-        gazeFillMesh.rotateX(Math.PI * 0.38);
-      } else {
-        gazeFillMesh.lookAt(camPos);
-      }
       gazeFillMesh.visible = true;
 
       if (gazeTarget === hitTarget) {
@@ -3951,6 +3984,21 @@ ${threeJsSrc}
   function animate() {
     renderer.setAnimationLoop(() => {
       const t = performance.now() / 1000;
+      // Flip panoReady once current scene's texture has decoded; then fire queued auto-audio (respecting VR grace)
+      if (!panoReady) {
+        var _curTex = texCache[currentSceneId];
+        if (_curTex && _curTex.image && _curTex.image.complete && _curTex.image.naturalWidth) {
+          panoReady = true;
+        }
+      }
+      if (pendingAutoAudio && panoReady) {
+        var _inVrGrace = vrSessionStartTime > 0 && (performance.now() - vrSessionStartTime) / 1000 < VR_INITIAL_GRACE;
+        if (!_inVrGrace) {
+          var _data = pendingAutoAudio;
+          pendingAutoAudio = null;
+          playAudio(_data);
+        }
+      }
       pulseHotspots(t);
       if (!renderer.xr.isPresenting) {
         // Flat mode: camera orbits via lon/lat, no sphere rotation needed
