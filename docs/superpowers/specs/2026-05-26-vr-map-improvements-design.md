@@ -337,23 +337,29 @@ if (uiHits.length > 0) {
 
 ## Implementation Order
 
-The work splits cleanly into 5 commits:
+All 5 fixes ship together as a single change. The work touches related code paths in `vr-tour-editor.html` (mesh setup, gaze loop, controller handler, `drawVRMinimap`, floor switching) — splitting into separate commits would mean touching the same regions multiple times. One coherent change is easier to review and test.
 
-1. **Pre-decode floor images** — fixes the freeze. Add `floorImageCache`, refactor `switchVRMapFloor` and `deactivateVRMinimap` to read from cache.
-2. **Replace small map with bottom-middle icon** — add `vrMinimapIcon` mesh, `repositionMapIcon()`, remove `updateVRMinimapPosition()`, remove small-mode `getSmallPlaneSize()` plane geometry path. Add icon to gaze + trigger target lists.
-3. **Add 3D floor buttons** — create `vrMinimapFloorPrev`/`Next` meshes, position relative to enlarged map plane, draw editor-styled canvas textures. Remove canvas-drawn `◀ ▶` arrows from `drawVRMinimap()`. Add gaze targeting with 1.2s dwell.
-4. **Add 3D close button** — create `vrMinimapCloseBtn` mesh, position top-right. Gaze + trigger close the map.
-5. **Match editor GUI + hotspot scaling** — update `drawVRMinimap()` to use editor's radius/scale formulas, label styles, header banner. Remove the 3-char abbreviation logic.
+Internal ordering within the single change (helps avoid intermediate broken states while editing):
+
+1. Add `floorImageCache` + `preloadFloorImages()` (no behavior change yet)
+2. Refactor `switchVRMapFloor()` and `deactivateVRMinimap()` to read from cache (fixes freeze)
+3. Update `drawVRMinimap()` — editor-matching styles, new node scale formula, remove canvas-drawn header arrows
+4. Create new 3D meshes: `vrMinimapIcon`, `vrMinimapFloorPrev/Next`, `vrMinimapCloseBtn` + their canvas textures
+5. Add `repositionMapIcon()`, `repositionFloorButtons()`, `repositionCloseButton()`
+6. Delete `updateVRMinimapPosition()` and the small-mode plane geometry path
+7. Extend `updateGaze()` to target the new meshes (with per-target dwell overrides)
+8. Extend `onVRSelect` to handle map UI clicks
 
 ## Testing Plan
 
-Per commit, verify on Quest 3:
+Verify on Quest 3 after the change ships:
 
-1. After commit 1: Switch floors via existing arrows. Confirm no freeze, smooth swap.
-2. After commit 2: Enter VR, see bottom-middle icon. Look down at it — confirm it doesn't move. Gaze 1.5s activates map. Trigger click also activates. Close map, icon respawns. Walk to new scene, icon respawns in new bottom-middle.
-3. After commit 3: Enlarged map shows two flanking buttons. Look at left button — gaze ring appears, 1.2s switches floor. Right button same. Buttons look like editor's `.minimap-floor-btn`.
-4. After commit 4: Close button at top-right of enlarged map. Gaze 1.8s closes. Trigger click closes.
-5. After commit 5: Compare VR enlarged map screenshot side-by-side with editor's enlarged flat minimap — node sizes, colors, labels, header banner should look the same. Hotspots at zoom 1x match editor; at zoom 3x they shrink proportionally.
+- **Freeze fix:** Switch floors multiple times in a row. No freeze, smooth swap.
+- **Icon:** Enter VR — bottom-middle icon visible. Look at it — confirm it doesn't move. Gaze 1.5s activates map. Trigger click also activates. Close map — icon respawns to new bottom-middle. Navigate to new scene — icon respawns.
+- **Floor buttons:** Enlarged map shows two flanking buttons. Gaze 1.2s on left/right switches floor. Trigger click also works. Buttons visually match editor's `.minimap-floor-btn`.
+- **Close button:** Top-right of enlarged map. Gaze 1.8s closes. Trigger click closes.
+- **GUI match:** Side-by-side screenshot of VR enlarged map vs editor's enlarged flat minimap. Node sizes, colors, labels, header banner all match.
+- **Hotspot scaling:** At zoom 1x, hotspots match editor size. At zoom 3x, hotspots shrink proportionally (existing zoom behavior preserved).
 
 ## Risks
 
