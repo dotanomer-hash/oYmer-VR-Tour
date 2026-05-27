@@ -2623,47 +2623,42 @@ ${threeJsSrc}
     mat.needsUpdate = true;
 
     // If floor changed, reload the floor plan image
+    // CRITICAL: never resize vrMinimapCanvas or rebuild vrMinimapMesh.geometry here — that
+    // corrupts the CanvasTexture's GPU buffer (new content uploads into the corner of the
+    // old allocation, leaving stale pixels elsewhere) and leaves the floor-arrow buttons
+    // positioned for the OLD geometry size. drawVRMinimap letterboxes any-aspect floor
+    // image inside the constant-size canvas, so we just swap the image and redraw.
     if (currentFloorId !== oldFloorId) {
       if (vrMinimapActive) {
-        // VR map is active and manages its own floor display — only update mapViewFloorId
+        // VR map is active and manages its own floor display — only update mapViewFloorId.
         mapViewFloorId = currentFloorId;
-        // Reload the image for the new current floor
         const newFloor = TOUR.floors.find(f => f.id === currentFloorId);
         const fpData = newFloor ? newFloor.floorPlanData : null;
         if (fpData) {
-          minimapFloorImg = new Image();
-          minimapFloorImg.onload = function() {
+          const newImg = new Image();
+          newImg.onload = function() {
+            minimapFloorImg = newImg;
             mapAspect = this.naturalHeight / this.naturalWidth;
-            mapCanvasW = Math.min(this.naturalWidth, 4096);
-            mapCanvasH = Math.round(mapCanvasW * mapAspect);
-            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-            vrMinimapCanvas.width = mapCanvasW;
-            vrMinimapCanvas.height = mapCanvasH;
-            let bigW, bigH;
-            if (mapAspect < 1) { bigW = 7; bigH = bigW * mapAspect; }
-            else { bigH = 7; bigW = bigH / mapAspect; }
-            vrMinimapMesh.geometry.dispose();
-            vrMinimapMesh.geometry = new THREE.PlaneGeometry(bigW, bigH);
             mapImageReady = true;
             drawVRMinimap();
             vrMinimapTex.needsUpdate = true;
           };
-          minimapFloorImg.src = fpData;
+          newImg.src = fpData;
         } else {
           minimapFloorImg = null;
-          mapImageReady = false;
+          mapAspect = 0.754;
+          mapImageReady = true;
           drawVRMinimap();
+          vrMinimapTex.needsUpdate = true;
         }
       } else {
+        // Map not active — small floating icon shows current floor. Update aspect so the
+        // icon's plane geometry matches the new floor; canvas dims stay constant.
         loadFloorPlanImage();
         if (minimapFloorImg && !minimapFloorImg.complete) {
           minimapFloorImg.onload = function() {
             mapAspect = this.naturalHeight / this.naturalWidth;
-            mapCanvasW = Math.min(this.naturalWidth, 4096);
-            mapCanvasH = Math.round(mapCanvasW * mapAspect);
-            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-            vrMinimapCanvas.width = mapCanvasW;
-            vrMinimapCanvas.height = mapCanvasH;
+            rebuildVRMinimapIconGeometry();
             mapImageReady = true;
             drawMinimap();
             drawVRMinimap();
@@ -2672,18 +2667,10 @@ ${threeJsSrc}
         } else {
           if (minimapFloorImg && minimapFloorImg.naturalWidth) {
             mapAspect = minimapFloorImg.naturalHeight / minimapFloorImg.naturalWidth;
-            mapCanvasW = Math.min(minimapFloorImg.naturalWidth, 4096);
-            mapCanvasH = Math.round(mapCanvasW * mapAspect);
-            if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
-            vrMinimapCanvas.width = mapCanvasW;
-            vrMinimapCanvas.height = mapCanvasH;
           } else {
             mapAspect = 0.754;
-            mapCanvasW = 2048;
-            mapCanvasH = Math.round(2048 * mapAspect);
-            vrMinimapCanvas.width = mapCanvasW;
-            vrMinimapCanvas.height = mapCanvasH;
           }
+          rebuildVRMinimapIconGeometry();
         }
       }
     }
@@ -3221,6 +3208,7 @@ ${threeJsSrc}
   // Grip button: when map is active → exit map, otherwise toggle minimap visibility
   let vrMinimapHidden = false;
   var mapActivatedAt = 0;
+  var mapDeactivatedAt = 0;
   function onGrip() {
     if (vrMinimapActive) {
       // Only exit if map has been open for at least 300ms (prevent accidental close)
@@ -3228,6 +3216,8 @@ ${threeJsSrc}
         deactivateVRMinimap();
       }
     } else {
+      // Ignore grip within 800ms of closing — Quest controllers double-fire squeeze
+      if (performance.now() - mapDeactivatedAt < 800) return;
       vrMinimapHidden = !vrMinimapHidden;
       // Icon visibility tracks vrMinimapHidden — animate-loop will reposition on next visible frame
       vrMinimapIcon.visible = !vrMinimapHidden && renderer.xr.isPresenting;
@@ -3668,22 +3658,30 @@ ${threeJsSrc}
 
   // --- New 3D map UI meshes ---
 
-  // Bottom-middle activation icon (replaces head-locked floating minimap)
-  const vrMinimapIconCanvas = document.createElement('canvas');
-  vrMinimapIconCanvas.width = 256;
-  vrMinimapIconCanvas.height = 256;
-  drawMapIconTexture(vrMinimapIconCanvas);
-  const vrMinimapIconTex = new THREE.CanvasTexture(vrMinimapIconCanvas);
-  vrMinimapIconTex.minFilter = THREE.LinearFilter;
-  vrMinimapIconTex.magFilter = THREE.LinearFilter;
+  // Floating small minimap that activates the enlarged map when trigger-clicked.
+  // Uses the same floor-plan canvas texture as the big map (vrMinimapTex), sized big enough
+  // to aim at reliably with the Quest controller (was a tiny abstract icon, too hard to click).
+  function getSmallIconSize() {
+    // Landscape floor plans: 1.2m wide. Portrait: 0.8m wide. Height tracks current mapAspect.
+    const w = mapAspect < 1 ? 1.2 : 0.8;
+    return { w: w, h: w * mapAspect };
+  }
+  const _smallIconSize = getSmallIconSize();
   const vrMinimapIcon = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.5, 0.5),
-    new THREE.MeshBasicMaterial({ map: vrMinimapIconTex, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false })
+    new THREE.PlaneGeometry(_smallIconSize.w, _smallIconSize.h),
+    new THREE.MeshBasicMaterial({ map: vrMinimapTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapIcon.renderOrder = 998;
   vrMinimapIcon.userData._mapAction = 'activate';
   vrMinimapIcon.visible = false; // shown only once VR session is active
   scene.add(vrMinimapIcon);
+
+  // Rebuild the small icon's geometry when the floor plan's aspect changes (different floor loaded).
+  function rebuildVRMinimapIconGeometry() {
+    const sz = getSmallIconSize();
+    vrMinimapIcon.geometry.dispose();
+    vrMinimapIcon.geometry = new THREE.PlaneGeometry(sz.w, sz.h);
+  }
 
   // Floor-prev button
   const vrMinimapFloorPrevCanvas = document.createElement('canvas');
@@ -3755,11 +3753,12 @@ ${threeJsSrc}
     xrCam.getWorldDirection(camDir);
     camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
     camUp.crossVectors(camRight, camDir).normalize();
-    // Place in peripheral lower-left, head-locked (more down and more left for easier reach)
+    // Place in peripheral lower-left, head-locked. Same offsets as the old floating minimap
+    // (2.8m forward, 1.5m left, 1.0m down) — farther/larger angular size = easier to aim at.
     vrMinimapIcon.position.copy(camPos)
-      .add(camDir.clone().multiplyScalar(1.5))
-      .add(camRight.clone().multiplyScalar(-0.9))
-      .add(camUp.clone().multiplyScalar(-0.8));
+      .add(camDir.clone().multiplyScalar(2.8))
+      .add(camRight.clone().multiplyScalar(-1.5))
+      .add(camUp.clone().multiplyScalar(-1.0));
     vrMinimapIcon.lookAt(camPos);
   }
   // Keep the old name as an alias so any pre-existing callers don't break
@@ -3826,6 +3825,7 @@ ${threeJsSrc}
       if (mapCanvasH > 4096) { mapCanvasH = 4096; mapCanvasW = Math.round(mapCanvasH / mapAspect); }
       vrMinimapCanvas.width = mapCanvasW;
       vrMinimapCanvas.height = mapCanvasH;
+      rebuildVRMinimapIconGeometry();
       mapImageReady = true;
       drawMinimap();
       drawVRMinimap();
@@ -4089,6 +4089,7 @@ ${threeJsSrc}
   }
 
   function deactivateVRMinimap() {
+    mapDeactivatedAt = performance.now();
     // Reset button hover textures so they don't appear pre-highlighted on next open
     setFloorButtonHover('prev', false);
     setFloorButtonHover('next', false);
@@ -4104,19 +4105,19 @@ ${threeJsSrc}
     mapViewFloorId = actualFloorId;
     const cached = floorImageCache[actualFloorId];
 
-    if (cached && cached.ready) {
+    if (cached && cached.ready && cached.img.naturalWidth) {
+      // Read aspect from the actual decoded image — the cache only stores {img, ready},
+      // not aspect/w/h, so reading cached.aspect would give undefined → NaN icon geometry.
       minimapFloorImg = cached.img;
-      mapAspect = cached.aspect;
-      mapCanvasW = cached.w;
-      mapCanvasH = cached.h;
+      mapAspect = cached.img.naturalHeight / cached.img.naturalWidth;
     } else {
       minimapFloorImg = null;
       mapAspect = 0.754;
-      mapCanvasW = 2048;
-      mapCanvasH = Math.round(2048 * mapAspect);
     }
-    vrMinimapCanvas.width = mapCanvasW;
-    vrMinimapCanvas.height = mapCanvasH;
+    // DO NOT resize vrMinimapCanvas here — that corrupts the CanvasTexture's GPU buffer.
+    // Canvas dims stay at whatever the initial floor image set them to; drawVRMinimap
+    // letterboxes any-aspect floor image inside the constant-size canvas.
+    rebuildVRMinimapIconGeometry();
 
     // Map plane no longer used in small mode — hide it; the bottom-middle icon takes over
     vrMinimapMesh.visible = false;
