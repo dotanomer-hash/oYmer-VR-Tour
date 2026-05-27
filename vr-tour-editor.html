@@ -3597,10 +3597,27 @@ ${threeJsSrc}
     ctx.fillText('MAP', cx, H - 28);
   }
 
-  function drawFloorButtonTexture(canvas, arrow, hovered) {
+  function drawFloorButtonTexture(canvas, arrow, hovered, disabled) {
     const W = canvas.width, H = canvas.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, W, H);
+    if (disabled) {
+      // Greyed-out at-edge state (no more floors in this direction)
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.roundRect(8, 8, W - 16, H - 16, 24);
+      ctx.fill();
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.fillStyle = '#666';
+      ctx.font = 'bold 220px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(arrow, W / 2, H / 2);
+      ctx.textBaseline = 'alphabetic';
+      return;
+    }
     // Editor's .minimap-floor-btn style
     ctx.fillStyle = hovered ? '#ff7a00' : 'rgba(0,0,0,0.85)';
     ctx.beginPath();
@@ -3692,7 +3709,7 @@ ${threeJsSrc}
   vrMinimapFloorPrevTex.minFilter = THREE.LinearFilter;
   vrMinimapFloorPrevTex.magFilter = THREE.LinearFilter;
   const vrMinimapFloorPrev = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.0, 2.5),
+    new THREE.PlaneGeometry(1.0, 1.25),
     new THREE.MeshBasicMaterial({ map: vrMinimapFloorPrevTex, transparent: true, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapFloorPrev.renderOrder = 1000;
@@ -3710,7 +3727,7 @@ ${threeJsSrc}
   vrMinimapFloorNextTex.minFilter = THREE.LinearFilter;
   vrMinimapFloorNextTex.magFilter = THREE.LinearFilter;
   const vrMinimapFloorNext = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.0, 2.5),
+    new THREE.PlaneGeometry(1.0, 1.25),
     new THREE.MeshBasicMaterial({ map: vrMinimapFloorNextTex, transparent: true, side: THREE.DoubleSide, depthTest: false })
   );
   vrMinimapFloorNext.renderOrder = 1000;
@@ -3769,7 +3786,7 @@ ${threeJsSrc}
     const bigW = vrMinimapMesh.geometry.parameters.width;
     const mapRight = new THREE.Vector3(1, 0, 0).applyQuaternion(vrMinimapMesh.quaternion);
     // OUTSIDE map, BIG (2m wide) and CLOSE to edge (gap 0.1m) so they're easy to hit with controller laser
-    const halfBtn = 1.0;
+    const halfBtn = 0.5;
     const gap = 0.1;
     const offset = bigW / 2 + gap + halfBtn;
     vrMinimapFloorPrev.position.copy(vrMinimapMesh.position)
@@ -3793,14 +3810,34 @@ ${threeJsSrc}
     vrMinimapCloseBtn.quaternion.copy(vrMinimapMesh.quaternion);
   }
 
+  // Track disabled (at-edge) and hovered state per arrow so any redraw uses the right look.
+  let floorBtnPrevDisabled = false, floorBtnNextDisabled = false;
+  let floorBtnPrevHovered = false, floorBtnNextHovered = false;
+
   function setFloorButtonHover(which, hovered) {
     if (which === 'prev') {
-      drawFloorButtonTexture(vrMinimapFloorPrevCanvas, '◀', hovered);
+      floorBtnPrevHovered = hovered;
+      drawFloorButtonTexture(vrMinimapFloorPrevCanvas, '◀', hovered && !floorBtnPrevDisabled, floorBtnPrevDisabled);
       vrMinimapFloorPrevTex.needsUpdate = true;
     } else {
-      drawFloorButtonTexture(vrMinimapFloorNextCanvas, '▶', hovered);
+      floorBtnNextHovered = hovered;
+      drawFloorButtonTexture(vrMinimapFloorNextCanvas, '▶', hovered && !floorBtnNextDisabled, floorBtnNextDisabled);
       vrMinimapFloorNextTex.needsUpdate = true;
     }
+  }
+
+  // Recompute "at-first-floor" / "at-last-floor" from current mapViewFloorId and redraw the
+  // arrows greyed-out at the edges. Call after activate and after each floor switch.
+  function updateFloorButtonStates() {
+    if (!TOUR.floors || TOUR.floors.length <= 1) return;
+    const sorted = [...TOUR.floors].sort((a, b) => a.level - b.level);
+    const curIdx = sorted.findIndex(f => f.id === mapViewFloorId);
+    floorBtnPrevDisabled = (curIdx <= 0);
+    floorBtnNextDisabled = (curIdx >= sorted.length - 1);
+    drawFloorButtonTexture(vrMinimapFloorPrevCanvas, '◀', floorBtnPrevHovered && !floorBtnPrevDisabled, floorBtnPrevDisabled);
+    drawFloorButtonTexture(vrMinimapFloorNextCanvas, '▶', floorBtnNextHovered && !floorBtnNextDisabled, floorBtnNextDisabled);
+    vrMinimapFloorPrevTex.needsUpdate = true;
+    vrMinimapFloorNextTex.needsUpdate = true;
   }
 
   function setCloseButtonHover(hovered) {
@@ -3845,13 +3882,19 @@ ${threeJsSrc}
 
     // Reserved top strip for floor name banner (NOT inside floor plan)
     const hdrScale = Math.max(1, W / 1000);
-    const hdrFontSize = Math.round(24 * hdrScale);
+    const hdrFontSize = Math.round(48 * hdrScale);  // doubled from 24 — easier to read at distance in VR
     const bannerH = hdrFontSize + 32; // banner takes this many pixels at the top
     const mapTop = bannerH + 4;       // floor plan starts here
     const mapH = H - mapTop - 4;      // floor plan available height
     const mapW = W - 8;               // floor plan available width (4px padding each side)
 
+    // Single save that wraps both the clip and the zoom transform — so EVERYTHING drawn
+    // under the zoom transform (floor plan, paths, scene nodes, labels) is clipped to the
+    // map area and can never overflow into the banner above when zoomed in.
     ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(4, mapTop, mapW, mapH, 12);
+    ctx.clip();
     if (activeMode && mapZoom > 1) {
       const maxPanX = (mapW * (mapZoom - 1)) / 2;
       const maxPanY = (mapH * (mapZoom - 1)) / 2;
@@ -3862,11 +3905,7 @@ ${threeJsSrc}
       ctx.translate(-W / 2, -(mapTop + mapH / 2));
     }
 
-    // Background floor plan — drawn into the reserved area below the banner
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(4, mapTop, mapW, mapH, 12);
-    ctx.clip();
+    // Background floor plan — drawn into the (now-clipped) area
     if (minimapFloorImg && minimapFloorImg.complete && minimapFloorImg.naturalWidth) {
       // Letterbox the image inside the map area — canvas dims stay constant across floor switches,
       // so we fit the image preserving its aspect ratio (no stretching).
@@ -3892,15 +3931,9 @@ ${threeJsSrc}
       ctx.fillStyle = 'rgba(10, 15, 30, 0.7)';
       ctx.fillRect(4, mapTop, mapW, mapH);
     }
-    ctx.restore();
-
-    if (!activeMode) {
-      ctx.beginPath();
-      ctx.roundRect(4, mapTop, mapW, mapH, 12);
-      ctx.strokeStyle = 'rgba(255,122,0,0.5)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
+    // (Removed the inner ctx.restore() — the outer save now wraps the entire zoomed/clipped
+    // section through to the end of the scene-nodes draw below. Inactive border moved
+    // to after the outer restore so it draws unclipped at full canvas coords.)
 
     const floorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
     const scenes = getScenesForFloor(floorId);
@@ -3914,18 +3947,20 @@ ${threeJsSrc}
       positions[id].y += mapTop;
     }
 
-    // Use milder hotspot scale (Issue 3 fix)
+    // Hotspot scale. zoomScale shrinks markers slightly when zoomed (so they don't dominate
+    // the view) but is clamped to 0.6× so they don't shrink to dots at max zoom 6×.
     const nodeScale = Math.max(1, W / 1000);
-    const zoomScale = activeMode && mapZoom > 1 ? 1.2 / mapZoom : 1;
+    const zoomScale = activeMode && mapZoom > 1 ? Math.max(0.6, 1.2 / mapZoom) : 1;
 
-    // Connection lines
-    ctx.lineWidth = 1.5 * nodeScale * zoomScale;
+    // Permanent connection lines between nav-linked scenes. Orange for visibility on light
+    // floor plans (the old faint white was invisible when active map removes the dark overlay).
+    ctx.lineWidth = Math.max(2, 1.5 * nodeScale * zoomScale);
     scenes.forEach(s => {
       s.hotspots.forEach(hs => {
         if (hs.type === 'nav' && hs.target && positions[parseInt(hs.target)]) {
           const from = positions[s.id];
           const to = positions[parseInt(hs.target)];
-          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.6)' : 'rgba(255,255,255,0.25)';
+          ctx.strokeStyle = s.id === currentSceneId ? 'rgba(255,122,0,0.85)' : 'rgba(255,122,0,0.4)';
           ctx.beginPath();
           ctx.moveTo(from.x, from.y);
           ctx.lineTo(to.x, to.y);
@@ -3984,7 +4019,16 @@ ${threeJsSrc}
       }
     });
 
-    ctx.restore(); // undo zoom/pan transform
+    ctx.restore(); // undo zoom/pan transform AND outer clip
+
+    // Inactive-mode orange border — drawn outside clip so the rounded edge is crisp.
+    if (!activeMode) {
+      ctx.beginPath();
+      ctx.roundRect(4, mapTop, mapW, mapH, 12);
+      ctx.strokeStyle = 'rgba(255,122,0,0.5)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
 
     // Floor name banner — drawn LAST so it appears above floor plan, in the reserved top strip
     drawFloorNameBanner();
@@ -4079,7 +4123,10 @@ ${threeJsSrc}
     const hasMultiFloor = TOUR.floors && TOUR.floors.length > 1;
     vrMinimapFloorPrev.visible = hasMultiFloor;
     vrMinimapFloorNext.visible = hasMultiFloor;
-    if (hasMultiFloor) repositionFloorButtons();
+    if (hasMultiFloor) {
+      repositionFloorButtons();
+      updateFloorButtonStates();
+    }
 
     // Show + position close button
     vrMinimapCloseBtn.visible = true;
@@ -4154,6 +4201,7 @@ ${threeJsSrc}
     mapTriggerHeld = false;
     mapDidDrag = false;
     mapFloorSwitchCooldown = performance.now();
+    updateFloorButtonStates();
 
     const targetFloor = sorted[newIdx];
 
@@ -4171,11 +4219,8 @@ ${threeJsSrc}
         vrMinimapTex.needsUpdate = true;
       };
       newImg.src = targetFloor.floorPlanData;
-      // Immediate visual feedback while the new image decodes — show dark with banner update
-      minimapFloorImg = null;
-      mapNeedsRedraw = true;
-      drawVRMinimap();
-      vrMinimapTex.needsUpdate = true;
+      // Keep the old floor visible until the new image is fully decoded — atomic swap inside
+      // newImg.onload above. No intermediate "black flash" while loading.
     } else {
       // No floor plan data → dark fallback
       minimapFloorImg = null;
@@ -4188,20 +4233,13 @@ ${threeJsSrc}
   }
 
   function handleVRMinimapClick(uv) {
-    // UV-BASED FALLBACK for floor switching: if the user trigger-clicks the bottom-left
-    // or bottom-right corner of the map (the 20% × 20% triangles), treat it as a floor
-    // switch even if the 3D arrow button missed. UV: x=0 left, x=1 right, y=0 BOTTOM (uv.y is canvas-flipped).
-    if (TOUR.floors && TOUR.floors.length > 1) {
-      const inLeft = uv.x < 0.2 && uv.y < 0.2;
-      const inRight = uv.x > 0.8 && uv.y < 0.2;
-      if (inLeft) { switchVRMapFloor(-1); return true; }
-      if (inRight) { switchVRMapFloor(+1); return true; }
-    }
-
+    // (Removed the bottom-corner UV fallback for floor switching — the dedicated 3D arrow
+    // buttons are reliable, and the fallback was eating HS clicks that happened to land in
+    // the bottom corners of the floor plan.)
     const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
     // Mirror drawVRMinimap's reserved top-banner strip so hit-test aligns with rendered node positions
     const hdrScale = Math.max(1, W / 1000);
-    const hdrFontSize = Math.round(24 * hdrScale);
+    const hdrFontSize = Math.round(48 * hdrScale);  // keep in sync with drawVRMinimap
     const bannerH = hdrFontSize + 32;
     const mapTop = bannerH + 4;
     const mapH = H - mapTop - 4;
@@ -4395,39 +4433,58 @@ ${threeJsSrc}
           } else {
             mapDragStart = null;
           }
-          // Hover detection: raycast to find which scene node laser is near
+          // Hover detection: raycast EITHER controller to find which HS the laser is over.
+          // Math mirrors handleVRMinimapClick exactly — banner-aware Y zoom-reverse and
+          // (4, mapTop) position shift — so the hover hit aligns with rendered nodes.
           const oldHovered = mapHoveredSceneId;
-          mapHoveredSceneId = null;
-          if (controller1) {
+          let newHovered = null;
+          const hoverControllers = [controller1, controller2];
+          for (const ctrl of hoverControllers) {
+            if (!ctrl || newHovered !== null) continue;
             const tempRay = new THREE.Raycaster();
-            tempRay.ray.origin.setFromMatrixPosition(controller1.matrixWorld);
+            tempRay.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
             const fwd = new THREE.Vector3(0, 0, -1).applyMatrix4(
-              new THREE.Matrix4().extractRotation(controller1.matrixWorld)
+              new THREE.Matrix4().extractRotation(ctrl.matrixWorld)
             );
             tempRay.ray.direction.copy(fwd);
             const hits = tempRay.intersectObject(vrMinimapMesh);
-            if (hits.length > 0) {
-              const uv = hits[0].uv;
-              const mW = vrMinimapCanvas.width, mH = vrMinimapCanvas.height;
-              let hmx = uv.x * mW, hmy = (1 - uv.y) * mH;
-              if (mapZoom > 1) {
-                hmx = (hmx - mW / 2 - mapPanX) / mapZoom + mW / 2;
-                hmy = (hmy - mH / 2 - mapPanY) / mapZoom + mH / 2;
-              }
-              const hpad = Math.max(40, mW * 0.04);
-              const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
-              const hpos = getScenePositions(mW, mH, hpad, hoverFloorId);
-              const hNodeScale = Math.max(1, mW / 512) * 0.8;
-              const hHitR = 40 * hNodeScale;
-              for (const sc of getScenesForFloor(hoverFloorId)) {
-                const hp = hpos[sc.id];
-                if (hp && Math.sqrt((hmx - hp.x) ** 2 + (hmy - hp.y) ** 2) < hHitR) {
-                  mapHoveredSceneId = sc.id;
-                  break;
-                }
-              }
+            if (hits.length === 0) continue;
+
+            const uv = hits[0].uv;
+            const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+            const hdrScale = Math.max(1, W / 1000);
+            const hdrFontSize = Math.round(48 * hdrScale);  // keep in sync with drawVRMinimap
+            const bannerH = hdrFontSize + 32;
+            const mapTop = bannerH + 4;
+            const mapH = H - mapTop - 4;
+            const mapW = W - 8;
+            let mx = uv.x * W;
+            let my = (1 - uv.y) * H;
+            if (mapZoom > 1) {
+              mx = (mx - W / 2 - mapPanX) / mapZoom + W / 2;
+              my = (my - (mapTop + mapH / 2) - mapPanY) / mapZoom + (mapTop + mapH / 2);
             }
+            const pad = Math.max(40, mapW * 0.04);
+            const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
+            const positions = getScenePositions(mapW, mapH, pad, hoverFloorId);
+            for (const id in positions) {
+              positions[id].x += 4;
+              positions[id].y += mapTop;
+            }
+            const nodeScale = Math.max(1, W / 1000);
+            const hitRadius = 36 * nodeScale; // slightly more forgiving than 28 click radius
+            const floorScenes = getScenesForFloor(hoverFloorId);
+            let closest = null;
+            let closestDist = Infinity;
+            for (const sc of floorScenes) {
+              const p = positions[sc.id];
+              if (!p) continue;
+              const d = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+              if (d < closestDist) { closestDist = d; closest = sc; }
+            }
+            if (closest && closestDist < hitRadius) newHovered = closest.id;
           }
+          mapHoveredSceneId = newHovered;
           if (mapHoveredSceneId !== oldHovered) mapNeedsRedraw = true;
 
           if (mapNeedsRedraw) {
