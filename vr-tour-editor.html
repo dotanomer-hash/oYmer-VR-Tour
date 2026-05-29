@@ -2597,6 +2597,7 @@ ${threeJsSrc}
     setZoom(defaultFov);
     const oldFloorId = currentFloorId;
     currentSceneId = id;
+    window._lastSceneEnterTime = performance.now(); // for the gaze-on-HS cooldown after entering a scene
     currentStereo = s.stereoType || (s.isStereo ? 'ou' : 'none');
     currentFloorId = getCurrentFloorId();
     // Mark that VR scene yaw needs recalculation on next VR frame
@@ -3118,17 +3119,24 @@ ${threeJsSrc}
     ]);
     const lineMat = new THREE.LineBasicMaterial({ color: 0xff7a00, linewidth: 2, transparent: true, opacity: 0.6 });
     group.add(new THREE.Line(lineGeo, lineMat));
-    // Dot at the end of the ray
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, depthTest: false });
+    // Dot at the end of the ray — orange center, dark halo for contrast against light backgrounds
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.95, depthTest: false });
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 8), dotMat);
     dot.position.set(0, 0, -500);
     dot.name = 'rayDot';
-    dot.renderOrder = 1000;
+    dot.renderOrder = 1001;
+    // Dark halo so the dot stands out on the white floor plan
+    const dotHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 8),
+      new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.6, depthTest: false })
+    );
+    dotHalo.renderOrder = 1000;
+    dot.add(dotHalo);
     const dotCore = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 12, 6),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false })
     );
-    dotCore.renderOrder = 1001;
+    dotCore.renderOrder = 1002;
     dot.add(dotCore);
     group.add(dot);
     return group;
@@ -3210,6 +3218,8 @@ ${threeJsSrc}
   var mapActivatedAt = 0;
   var mapDeactivatedAt = 0;
   function onGrip() {
+    resetControllerActivity();
+    resetMapGaze();
     if (vrMinimapActive) {
       // Only exit if map has been open for at least 300ms (prevent accidental close)
       if (performance.now() - mapActivatedAt > 300) {
@@ -3235,12 +3245,27 @@ ${threeJsSrc}
   var gazeTargetId = null;   // scene id being gazed at
   var gazeStartTime = 0;     // when gaze started
   var gazeDwell = 1500;      // ms to hold gaze before navigating
-  controller1.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller1.userData._triggerActive = true; } });
+  controller1.addEventListener('selectstart', () => { resetControllerActivity(); resetMapGaze(); if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller1.userData._triggerActive = true; } });
   controller1.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; controller1.userData._triggerActive = false; });
-  controller2.addEventListener('selectstart', () => { if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller2.userData._triggerActive = true; } });
+  controller2.addEventListener('selectstart', () => { resetControllerActivity(); resetMapGaze(); if (vrMinimapActive) { mapTriggerHeld = true; mapDragStart = null; mapDidDrag = false; controller2.userData._triggerActive = true; } });
   controller2.addEventListener('selectend', () => { mapTriggerHeld = false; mapDragStart = null; controller2.userData._triggerActive = false; });
 
+  let controllersVisible = true;
+  let handTrackingActive = false;
+  function setControllersVisible(show) {
+    if (controllersVisible === show) return;
+    controllersVisible = show;
+    [controller1, controller2].forEach(ctrl => {
+      ctrl.children.forEach(child => { child.visible = show; });
+    });
+  }
+  // Kept as a no-op so existing call sites still compile; visibility is now
+  // driven purely by hand-tracking state (see inputsourceschange handler + per-frame sync).
+  function resetControllerActivity() {}
+
   function onVRSelect(event) {
+    resetControllerActivity();
+    resetMapGaze();
     const controller = event.target;
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -3288,11 +3313,11 @@ ${threeJsSrc}
     // - Trigger drag → pan (handled in animate loop)
     // - Grip → exit map (handled in onGrip)
     if (vrMinimapActive) {
-      if (!mapDidDrag) {
-        const mapHits = raycaster.intersectObject(vrMinimapMesh);
-        if (mapHits.length > 0) {
-          handleVRMinimapClick(mapHits[0].uv);
-        }
+      const mapHits = raycaster.intersectObject(vrMinimapMesh);
+      if (mapHits.length > 0) {
+        if (!mapDidDrag) handleVRMinimapClick(mapHits[0].uv);
+      } else if (performance.now() - mapActivatedAt > 300) {
+        deactivateVRMinimap();
       }
       mapDidDrag = false;
       return;
@@ -3322,10 +3347,25 @@ ${threeJsSrc}
           // Kill any audio queued by the autoplay listener from flat viewing — we'll re-queue it after the VR session warms up
           stopAudio();
           pendingAutoplay = null;
-          navigator.xr.requestSession('immersive-vr').then(session => {
+          navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] }).then(session => {
             btn.textContent = 'Exit VR';
             btn.style.background = '#c00';
             renderer.xr.setSession(session);
+            const syncControllerVisibilityToInputSources = () => {
+              let anyController = false;
+              let anyHand = false;
+              for (const src of session.inputSources) {
+                if (src.hand) anyHand = true;
+                else if (src.gamepad) anyController = true;
+              }
+              // Hand-tracking flag: hands appear OR controllers gone (Quest system hand
+              // tracking active even though we didn't request the WebXR hand-tracking feature).
+              handTrackingActive = anyHand || !anyController;
+              setControllersVisible(anyController && !anyHand);
+            };
+            session.addEventListener('inputsourceschange', syncControllerVisibilityToInputSources);
+            // Initial sync — Quest may already be in hand-tracking mode when the session starts.
+            syncControllerVisibilityToInputSources();
             // Mark session start time — gaze + auto-audio are suppressed for VR_INITIAL_GRACE seconds so the first frame can paint
             vrSessionStartTime = performance.now();
             // Reposition the bottom-middle map icon for the new VR session (deferred one frame to let camera settle)
@@ -3350,6 +3390,7 @@ ${threeJsSrc}
               vrMinimapCloseBtn.visible = false;
               vrMinimapMesh.visible = false;
               vrMinimapActive = false;
+              minimapAnchored = false;
               // Reset button hover textures so they don't appear pre-highlighted on re-entry
               setFloorButtonHover('prev', false);
               setFloorButtonHover('next', false);
@@ -3368,7 +3409,9 @@ ${threeJsSrc}
   // Gaze system — clockwise pie fill that looks like the hotspot itself filling in
   const gazeFillMat = new THREE.MeshBasicMaterial({ transparent: false, side: THREE.DoubleSide, depthTest: false });
   const gazeFillMesh = new THREE.Mesh(new THREE.CircleGeometry(6, 48, -Math.PI / 2, 0.01), gazeFillMat);
-  gazeFillMesh.renderOrder = 998;
+  // Must be > vrMinimapMesh.renderOrder (999): both use depthTest:false, so the
+  // higher renderOrder wins. At 998 the map painted over the dwell ring → invisible.
+  gazeFillMesh.renderOrder = 1002;
   gazeFillMesh.visible = false;
   scene.add(gazeFillMesh);
 
@@ -3379,6 +3422,22 @@ ${threeJsSrc}
   reticleMesh.visible = false;
   scene.add(reticleMesh);
 
+  // Map gaze cursor — visible dot+halo on the map surface (reticle at 50m is invisible against the 3.5m map)
+  const mapCursorHalo = new THREE.Mesh(
+    new THREE.CircleGeometry(0.055, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthTest: false, side: THREE.DoubleSide })
+  );
+  mapCursorHalo.renderOrder = 999;
+  mapCursorHalo.visible = false;
+  scene.add(mapCursorHalo);
+  const mapCursorDot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.03, 24),
+    new THREE.MeshBasicMaterial({ color: 0xff7a00, transparent: true, opacity: 0.9, depthTest: false, side: THREE.DoubleSide })
+  );
+  mapCursorDot.renderOrder = 1001;
+  mapCursorDot.visible = false;
+  scene.add(mapCursorDot);
+
   let gazeTarget = null;
   let gazeTimer = 0;
   let gazeGrace = 0;
@@ -3387,6 +3446,26 @@ ${threeJsSrc}
   const GAZE_GRACE = 0.3;
   const GAZE_COOLDOWN = 1.5;
   let lastFrameTime = performance.now();
+
+  // Map gaze state (parallel layer — active only when enlarged map is open)
+  let mapGazeTarget = null;
+  let mapGazeTimer = 0;
+  // Holds the raw (original-type, usually numeric) scene id under gaze. The
+  // string mapGazeTarget (hs: prefix + id) is only for dwell-target comparison;
+  // using its substring for navigation forced a STRING id, which loadScene's
+  // strict id-equality find rejected (scene ids are numbers) so it no-opped.
+  let mapGazeHsId = null;
+  let mapGazeLastFrame = 0;
+  const MAP_GAZE_HS_DWELL = 1.5;
+  const MAP_GAZE_FLOOR_DWELL = 1.5;
+  const MAP_GAZE_CLOSE_DWELL = 1.8;
+  const MAP_GAZE_OUTSIDE_DWELL = 2.0;
+  const SCENE_ENTER_GAZE_COOLDOWN = 5000; // ms: ignore gaze-on-HS right after landing in a scene, to avoid accidental chained jumps
+
+  function resetMapGaze() {
+    mapGazeTarget = null;
+    mapGazeTimer = 0;
+  }
 
   function updateGaze() {
     const now = performance.now();
@@ -3536,6 +3615,245 @@ ${threeJsSrc}
       gazeTimer = 0;
       gazeGrace = 0;
       gazeFillMesh.visible = false;
+    }
+  }
+
+  function updateMapGaze() {
+    const now = performance.now();
+    const dt = (now - mapGazeLastFrame) / 1000;
+    mapGazeLastFrame = now;
+    if (dt <= 0 || dt > 0.5) return;
+
+    const xrCam = renderer.xr.getCamera();
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    xrCam.getWorldPosition(camPos);
+    xrCam.getWorldDirection(camDir);
+
+    reticleMesh.visible = false;
+    mapCursorDot.visible = false;
+    mapCursorHalo.visible = false;
+
+    raycaster.ray.origin.copy(camPos);
+    raycaster.ray.direction.copy(camDir);
+
+    // Controller on the map → the controller drives interaction (hover + trigger
+    // click) and eye-gaze dwell is fully suppressed, so gazing and clicking don't
+    // fight. Gated on actively-held controllers (mirrors the hover rule); when
+    // controllers are set down / hand-tracking active, this is skipped so the eyes
+    // still work. Only triggers when the laser is ACTUALLY on the map, so a
+    // set-down controller pointing elsewhere doesn't block gaze.
+    if (controllersVisible && !handTrackingActive) {
+      const _cr = new THREE.Raycaster();
+      for (const ctrl of [controller1, controller2]) {
+        if (!ctrl) continue;
+        _cr.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+        _cr.ray.direction.set(0, 0, -1).applyMatrix4(new THREE.Matrix4().extractRotation(ctrl.matrixWorld));
+        if (_cr.intersectObject(vrMinimapMesh).length > 0) {
+          mapGazeTarget = null;
+          mapGazeTimer = 0;
+          gazeFillMesh.visible = false;
+          return; // cursor/halo/reticle already hidden above
+        }
+      }
+    }
+
+    // Position map gaze cursor on the map surface
+    const _mapGazeHits = raycaster.intersectObject(vrMinimapMesh);
+    if (_mapGazeHits.length > 0) {
+      const hp = _mapGazeHits[0].point;
+      const nudge = camPos.clone().sub(hp).normalize().multiplyScalar(0.005);
+      mapCursorDot.position.copy(hp).add(nudge);
+      mapCursorDot.lookAt(camPos);
+      mapCursorHalo.position.copy(mapCursorDot.position);
+      mapCursorHalo.lookAt(camPos);
+      mapCursorDot.visible = true;
+      mapCursorHalo.visible = true;
+    } else {
+      reticleMesh.visible = true;
+      reticleMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(4));
+      reticleMesh.lookAt(camPos);
+    }
+
+    let newTarget = null;
+    let dwellThreshold = 0;
+
+    // Check map UI buttons first (close, floor arrows)
+    const uiTargets = [vrMinimapCloseBtn];
+    if (TOUR.floors && TOUR.floors.length > 1) {
+      uiTargets.push(vrMinimapFloorPrev, vrMinimapFloorNext);
+    }
+    const uiHits = raycaster.intersectObjects(uiTargets.filter(t => t.visible));
+    if (uiHits.length > 0) {
+      const action = uiHits[0].object.userData._mapAction;
+      if (action === 'close') { newTarget = 'close'; dwellThreshold = MAP_GAZE_CLOSE_DWELL; }
+      // Skip disabled (greyed) arrows — gazing them does nothing, so don't draw a dwell ring.
+      else if (action === 'floorPrev' && !floorBtnPrevDisabled) { newTarget = 'floorPrev'; dwellThreshold = MAP_GAZE_FLOOR_DWELL; }
+      else if (action === 'floorNext' && !floorBtnNextDisabled) { newTarget = 'floorNext'; dwellThreshold = MAP_GAZE_FLOOR_DWELL; }
+    }
+
+    // Check map mesh for HS markers
+    let _hsWorldPos = null;
+    let _hsRingRadius = 0.12; // ring radius (world units); set to the marker's size when a HS is targeted
+    if (!newTarget) {
+      const mapHits = raycaster.intersectObject(vrMinimapMesh);
+      if (mapHits.length > 0) {
+        const uv = mapHits[0].uv;
+        const W = vrMinimapCanvas.width, H = vrMinimapCanvas.height;
+        const hdrScale = Math.max(1, W / 1000);
+        const hdrFontSize = Math.round(48 * hdrScale);
+        const bannerH = hdrFontSize + 32;
+        const mapTop = bannerH + 4;
+        const mapH = H - mapTop - 4;
+        const mapW = W - 8;
+        let mx = uv.x * W;
+        let my = (1 - uv.y) * H;
+        if (mapZoom > 1) {
+          mx = (mx - W / 2 - mapPanX) / mapZoom + W / 2;
+          my = (my - (mapTop + mapH / 2) - mapPanY) / mapZoom + (mapTop + mapH / 2);
+        }
+        const pad = Math.max(40, mapW * 0.04);
+        const hoverFloorId = (vrMinimapActive && mapViewFloorId) ? mapViewFloorId : getCurrentFloorId();
+        const positions = getScenePositions(mapW, mapH, pad, hoverFloorId);
+        for (const id in positions) { positions[id].x += 4; positions[id].y += mapTop; }
+        const nodeScale = Math.max(1, W / 1000);
+        // Gaze hit radius — forgiving (gaze is less precise than controller) but
+        // tight enough that the target tracks the marker, not a huge area around it.
+        const hitRadius = 60 * nodeScale;
+        const floorScenes = getScenesForFloor(hoverFloorId);
+        let closest = null, closestDist = Infinity, closestPos = null;
+        for (const sc of floorScenes) {
+          if (sc.id === currentSceneId) continue;
+          const p = positions[sc.id];
+          if (!p) continue;
+          const d = Math.sqrt((mx - p.x) ** 2 + (my - p.y) ** 2);
+          if (d < closestDist) { closestDist = d; closest = sc; closestPos = p; }
+        }
+        const gazeHsId = (closest && closestDist < hitRadius) ? closest.id : null;
+        if (mapHoveredSceneId !== gazeHsId) {
+          mapHoveredSceneId = gazeHsId;
+          mapNeedsRedraw = true;
+        }
+        // Cooldown: for SCENE_ENTER_GAZE_COOLDOWN ms after landing in a scene, don't let
+        // gaze dwell start (no ring, no jump) — avoids accidentally re-jumping if the user
+        // happens to be looking at a hotspot on arrival. Hover highlight above still works.
+        const _sinceSceneEnter = performance.now() - (window._lastSceneEnterTime || 0);
+        if (gazeHsId && _sinceSceneEnter >= SCENE_ENTER_GAZE_COOLDOWN) {
+          newTarget = 'hs:' + gazeHsId;
+          mapGazeHsId = gazeHsId;   // keep raw id (numeric) for navigation
+          dwellThreshold = MAP_GAZE_HS_DWELL;
+          // Put the ring EXACTLY on the marker: take the marker's logical canvas
+          // position, apply the same zoom/pan transform drawVRMinimap uses, then
+          // map that canvas point onto the map mesh in world space.
+          let drawnX = closestPos.x, drawnY = closestPos.y;
+          if (mapZoom > 1) {
+            drawnX = (closestPos.x - W / 2) * mapZoom + W / 2 + mapPanX;
+            drawnY = (closestPos.y - (mapTop + mapH / 2)) * mapZoom + (mapTop + mapH / 2) + mapPanY;
+          }
+          const _mw = vrMinimapMesh.geometry.parameters.width;
+          const _mh = vrMinimapMesh.geometry.parameters.height;
+          const _uR = (drawnX / W) - 0.5;
+          const _vR = 0.5 - (drawnY / H);
+          _hsWorldPos = new THREE.Vector3(_uR * _mw, _vR * _mh, 0).applyMatrix4(vrMinimapMesh.matrixWorld);
+          // Ring radius = the marker's radius in world units (marker is drawn at
+          // 12 * nodeScale * zoomScale canvas px), so the fill matches the hotspot.
+          const _zs = mapZoom > 1 ? Math.max(0.6, 1.2 / mapZoom) : 1;
+          _hsRingRadius = (12 * nodeScale * _zs) * (_mw / W);
+        }
+      }
+    }
+
+    // If gazing at nothing (not map, not buttons) → "outside" target
+    if (!newTarget) {
+      const allMapObjects = [vrMinimapMesh, vrMinimapCloseBtn, vrMinimapFloorPrev, vrMinimapFloorNext].filter(o => o.visible);
+      const anyHit = raycaster.intersectObjects(allMapObjects);
+      if (anyHit.length === 0) {
+        newTarget = 'outside';
+        dwellThreshold = MAP_GAZE_OUTSIDE_DWELL;
+      }
+    }
+
+    // Accumulate or reset dwell timer
+    if (newTarget && newTarget === mapGazeTarget) {
+      mapGazeTimer += dt;
+    } else {
+      mapGazeTarget = newTarget;
+      mapGazeTimer = 0;
+    }
+
+    // Visual feedback
+    if (mapGazeTarget && dwellThreshold > 0) {
+      const pct = Math.min(mapGazeTimer / dwellThreshold, 1);
+      gazeFillMesh.visible = true;
+
+      if (mapGazeTarget === 'outside') {
+        // Position the ring close to the camera (2m) so it's visually large
+        gazeFillMesh.position.copy(camPos).add(camDir.clone().multiplyScalar(2));
+        gazeFillMesh.lookAt(camPos);
+        gazeFillMat.map = null;
+        gazeFillMat.color.set(0xff7a00);
+        gazeFillMat.transparent = true;
+        gazeFillMat.opacity = 0.6 + pct * 0.4;
+        reticleMat.color.setHex(pct > 0.5 ? 0xff7a00 : 0xffffff);
+        reticleMat.opacity = 0.4 + pct * 0.4;
+      } else if (mapGazeTarget === 'close') {
+        gazeFillMesh.position.copy(vrMinimapCloseBtn.getWorldPosition(new THREE.Vector3()));
+        gazeFillMesh.position.add(camPos.clone().sub(gazeFillMesh.position).normalize().multiplyScalar(0.05));
+        gazeFillMesh.lookAt(camPos);
+        gazeFillMat.map = null;
+        gazeFillMat.color.set(0xcc0000);
+        gazeFillMat.transparent = true; // must be transparent to draw in the same pass as the (transparent) map, above it
+        gazeFillMat.opacity = 0.9;
+      } else if (mapGazeTarget === 'floorPrev' || mapGazeTarget === 'floorNext') {
+        const btn = mapGazeTarget === 'floorPrev' ? vrMinimapFloorPrev : vrMinimapFloorNext;
+        gazeFillMesh.position.copy(btn.getWorldPosition(new THREE.Vector3()));
+        gazeFillMesh.position.add(camPos.clone().sub(gazeFillMesh.position).normalize().multiplyScalar(0.05));
+        gazeFillMesh.lookAt(camPos);
+        gazeFillMat.map = null;
+        gazeFillMat.color.set(0xff7a00);
+        gazeFillMat.transparent = true; // must be transparent to draw in the same pass as the (transparent) map, above it
+        gazeFillMat.opacity = 0.9;
+      } else if (mapGazeTarget.startsWith('hs:')) {
+        // Anchor fill ring at the actual marker position on the map
+        if (_hsWorldPos) {
+          gazeFillMesh.position.copy(_hsWorldPos);
+        } else {
+          const _mgHits = raycaster.intersectObject(vrMinimapMesh);
+          if (_mgHits.length > 0) gazeFillMesh.position.copy(_mgHits[0].point);
+        }
+        gazeFillMesh.position.add(camPos.clone().sub(gazeFillMesh.position).normalize().multiplyScalar(0.05));
+        gazeFillMesh.lookAt(camPos);
+        gazeFillMat.map = null;
+        gazeFillMat.color.set(0xff7a00);
+        gazeFillMat.transparent = true; // must be transparent to draw in the same pass as the (transparent) map, above it
+        gazeFillMat.opacity = 0.95;
+      }
+      gazeFillMat.needsUpdate = true;
+      gazeFillMesh.geometry.dispose();
+      const arc = Math.max(0.2, pct) * Math.PI * 2;
+      const fillRadius = mapGazeTarget === 'outside' ? 0.4 : (mapGazeTarget.startsWith('hs:') ? _hsRingRadius : 1.0);
+      gazeFillMesh.geometry = new THREE.CircleGeometry(fillRadius, 48, -Math.PI / 2, arc);
+
+      if (mapGazeTimer >= dwellThreshold) {
+        if (mapGazeTarget.startsWith('hs:')) {
+          goToScene(mapGazeHsId);   // raw id (original type), matches controller path
+          drawVRMinimap();
+        } else if (mapGazeTarget === 'floorPrev') {
+          switchVRMapFloor(-1);
+        } else if (mapGazeTarget === 'floorNext') {
+          switchVRMapFloor(+1);
+        } else if (mapGazeTarget === 'close' || mapGazeTarget === 'outside') {
+          deactivateVRMinimap();
+        }
+        resetMapGaze();
+        gazeFillMesh.visible = false;
+        reticleMat.color.set(0xffffff);
+        reticleMat.opacity = 0.4;
+      }
+    } else {
+      gazeFillMesh.visible = false;
+      reticleMat.color.set(0xffffff);
+      reticleMat.opacity = 0.4;
     }
   }
 
@@ -3853,6 +4171,15 @@ ${threeJsSrc}
   let mapViewFloorId = null; // floor shown on map (may differ from actual floor when browsing)
   let mapFloorSwitchCooldown = 0; // prevent rapid switching
 
+  // Look-down-to-anchor state
+  let minimapAnchored = false;
+  let minimapAnchorTime = 0;
+  const MINIMAP_ANCHOR_PITCH = -25 * Math.PI / 180;
+  const MINIMAP_UNANCHOR_PITCH = 0;
+  const MINIMAP_ANCHOR_GAZE_DWELL = 1.5;
+  let minimapGazeTimer = 0;
+  let minimapGazingAtIcon = false;
+
   // Update canvas size when floor plan image loads (geometry rebuild happens in activateVRMinimap / switchVRMapFloor)
   if (minimapFloorImg) {
     minimapFloorImg.onload = function() {
@@ -4082,6 +4409,8 @@ ${threeJsSrc}
   function activateVRMinimap() {
     vrMinimapActive = true;
     mapActivatedAt = performance.now();
+    mapGazeLastFrame = performance.now();
+    resetMapGaze();
     mapZoom = 1.0;
     mapPanX = 0;
     mapPanY = 0;
@@ -4137,6 +4466,13 @@ ${threeJsSrc}
 
   function deactivateVRMinimap() {
     mapDeactivatedAt = performance.now();
+    resetMapGaze();
+    minimapAnchored = false;
+    minimapGazeTimer = 0;
+    minimapGazingAtIcon = false;
+    gazeFillMesh.visible = false;
+    reticleMat.color.set(0xffffff);
+    reticleMat.opacity = 0.4;
     // Reset button hover textures so they don't appear pre-highlighted on next open
     setFloorButtonHover('prev', false);
     setFloorButtonHover('next', false);
@@ -4174,6 +4510,8 @@ ${threeJsSrc}
     vrMinimapFloorPrev.visible = false;
     vrMinimapFloorNext.visible = false;
     vrMinimapCloseBtn.visible = false;
+    mapCursorDot.visible = false;
+    mapCursorHalo.visible = false;
 
     // Re-show the bottom-middle icon and reposition it
     vrMinimapIcon.visible = !vrMinimapHidden;
@@ -4284,8 +4622,16 @@ ${threeJsSrc}
   // Update ray dot to show where laser points
   function updateRayDots() {
     [controller1, controller2].forEach(ctrl => {
-      const dot = ctrl.children[0] && ctrl.children[0].getObjectByName('rayDot');
+      const rayGroup = ctrl.children[0];
+      const dot = rayGroup && rayGroup.getObjectByName('rayDot');
       if (!dot) return;
+      const line = rayGroup.children.find(c => c.isLine);
+      const setLineEnd = (z) => {
+        if (line && line.geometry && line.geometry.attributes.position) {
+          line.geometry.attributes.position.setXYZ(1, 0, 0, z); // 2nd vertex
+          line.geometry.attributes.position.needsUpdate = true;
+        }
+      };
       tempMatrix.identity().extractRotation(ctrl.matrixWorld);
       raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
       raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
@@ -4297,13 +4643,18 @@ ${threeJsSrc}
         const hitWorld = hits[0].point;
         const local = ctrl.worldToLocal(hitWorld.clone());
         dot.position.copy(local);
-        // Scale dot up with distance so it stays visually large
+        // End the laser line exactly at the dot (was fixed at z=-500, overshooting it).
+        setLineEnd(local.z);
+        // Scale dot up with distance; halved on the map per request (was 1.4 baseScale).
         const dist = Math.max(1, Math.abs(local.z));
-        const s = Math.max(1, dist / 8);
+        const onMap = hits[0].object === vrMinimapMesh;
+        const baseScale = onMap ? 0.7 : 1;
+        const s = Math.max(baseScale, dist / 8);
         dot.scale.set(s, s, s);
       } else {
-        dot.position.set(0, 0, -500);
-        dot.scale.set(60, 60, 60);
+        dot.position.set(0, 0, -5);
+        dot.scale.set(1, 1, 1);
+        setLineEnd(-5);
       }
     });
   }
@@ -4370,22 +4721,107 @@ ${threeJsSrc}
         }
         sphere.rotation.y = vrSceneYaw;
         vrHotspotGroup.rotation.y = vrSceneYaw;
+        const _vrNow = performance.now();
+        const dt = (_vrNow - (window._lastVRFrame || _vrNow)) / 1000;
+        window._lastVRFrame = _vrNow;
         if (!vrMinimapActive) {
           updateGaze();
         } else {
-          reticleMesh.visible = false;
-          gazeFillMesh.visible = false;
+          updateMapGaze();
         }
         // Map plane is only shown when explicitly activated
         if (!vrMinimapActive) vrMinimapMesh.visible = false;
-        // Floating icon — head-locked, visible only when map is not active and not hidden
+        // Floating icon — head-locked unless anchored by looking down
         if (!vrMinimapActive && !vrMinimapHidden) {
           vrMinimapIcon.visible = true;
-          updateMapIconPosition();  // head-locked every frame
+
+          const _anchorCam = renderer.xr.getCamera();
+          const _anchorDir = new THREE.Vector3();
+          _anchorCam.getWorldDirection(_anchorDir);
+          const headPitch = Math.asin(Math.max(-1, Math.min(1, _anchorDir.y)));
+
+          if (!minimapAnchored && headPitch < MINIMAP_ANCHOR_PITCH) {
+            minimapAnchored = true;
+            minimapAnchorTime = performance.now();
+            minimapGazeTimer = 0;
+            minimapGazingAtIcon = false;
+            vrMinimapIcon.material.opacity = 1.0;
+          } else if (minimapAnchored && headPitch > MINIMAP_UNANCHOR_PITCH) {
+            minimapAnchored = false;
+            vrMinimapIcon.material.opacity = 0.85;
+            minimapGazeTimer = 0;
+            minimapGazingAtIcon = false;
+            gazeFillMesh.visible = false;
+          }
+
+          if (minimapAnchored) {
+            const anchorAge = (performance.now() - minimapAnchorTime) / 1000;
+            if (anchorAge < 0.3) {
+              vrMinimapIcon.material.opacity = 1.0 - (anchorAge / 0.3) * 0.15;
+            } else {
+              vrMinimapIcon.material.opacity = 0.85;
+            }
+            const _iconCamPos = new THREE.Vector3();
+            _anchorCam.getWorldPosition(_iconCamPos);
+            vrMinimapIcon.lookAt(_iconCamPos);
+
+            // Look-down-and-hold: while anchored (looking down past the pitch
+            // threshold), fill the dwell ring on the icon automatically — no need
+            // to aim gaze precisely at the icon. Holding the downward look opens
+            // the map; looking back up (unanchor, handled above) cancels + resets.
+            minimapGazingAtIcon = true;
+            minimapGazeTimer += dt;
+
+            gazeFillMesh.visible = true;
+            gazeFillMesh.position.copy(vrMinimapIcon.getWorldPosition(new THREE.Vector3()));
+            gazeFillMesh.position.add(_iconCamPos.clone().sub(gazeFillMesh.position).normalize().multiplyScalar(0.05));
+            gazeFillMesh.lookAt(_iconCamPos);
+            gazeFillMat.map = null;
+            gazeFillMat.color.set(0xff7a00);
+            gazeFillMat.transparent = true; // transparent pass + renderOrder 1002 → draws above the transparent icon/map
+            gazeFillMat.opacity = 0.9;
+            gazeFillMat.needsUpdate = true;
+            const pct = Math.min(minimapGazeTimer / MINIMAP_ANCHOR_GAZE_DWELL, 1);
+            gazeFillMesh.geometry.dispose();
+            gazeFillMesh.geometry = new THREE.CircleGeometry(0.3, 48, -Math.PI / 2, Math.max(0.05, pct) * Math.PI * 2);
+
+            if (minimapGazeTimer >= MINIMAP_ANCHOR_GAZE_DWELL) {
+              activateVRMinimap();
+              minimapAnchored = false;
+              minimapGazeTimer = 0;
+              minimapGazingAtIcon = false;
+              gazeFillMesh.visible = false;
+            }
+          } else {
+            updateMapIconPosition();
+          }
         } else {
           vrMinimapIcon.visible = false;
+          if (!vrMinimapActive) {
+            minimapAnchored = false;
+            minimapGazeTimer = 0;
+            minimapGazingAtIcon = false;
+          }
         }
         updateRayDots();
+
+        // Per-frame safety sync — keep wand visibility in lockstep with controller-vs-hand state,
+        // in case Quest changes input sources without firing inputsourceschange.
+        {
+          const _xrSession = renderer.xr.getSession();
+          if (_xrSession) {
+            let _anyCtrl = false, _anyHand = false;
+            for (const src of _xrSession.inputSources) {
+              if (src.hand) _anyHand = true;
+              else if (src.gamepad) _anyCtrl = true;
+            }
+            const _ht = _anyHand || !_anyCtrl;
+            if (_ht !== handTrackingActive) {
+              handTrackingActive = _ht;
+              setControllersVisible(_anyCtrl && !_anyHand);
+            }
+          }
+        }
 
         // Map controls: thumbstick = zoom, hold trigger + drag controller = pan
         if (vrMinimapActive) {
@@ -4436,6 +4872,9 @@ ${threeJsSrc}
           // Hover detection: raycast EITHER controller to find which HS the laser is over.
           // Math mirrors handleVRMinimapClick exactly — banner-aware Y zoom-reverse and
           // (4, mapTop) position shift — so the hover hit aligns with rendered nodes.
+          // Skip entirely when controllers are hidden (idle / hand-tracking) so gaze-set
+          // mapHoveredSceneId from updateMapGaze isn't wiped every frame.
+          if (controllersVisible && !handTrackingActive) {
           const oldHovered = mapHoveredSceneId;
           let newHovered = null;
           const hoverControllers = [controller1, controller2];
@@ -4484,8 +4923,16 @@ ${threeJsSrc}
             }
             if (closest && closestDist < hitRadius) newHovered = closest.id;
           }
-          mapHoveredSceneId = newHovered;
-          if (mapHoveredSceneId !== oldHovered) mapNeedsRedraw = true;
+          // Controller drives the highlight ONLY when it's actually pointing at a
+          // hotspot (newHovered set). When the laser is on the map but not on any
+          // hotspot, leave the gaze-driven hover from updateMapGaze alone instead of
+          // wiping it to null — otherwise the laser (almost always on the map plane)
+          // erases the eye-hover every frame. → "controller when pointing, else eyes".
+          if (newHovered !== null && newHovered !== oldHovered) {
+            mapHoveredSceneId = newHovered;
+            mapNeedsRedraw = true;
+          }
+          } // end if (controllersVisible && !handTrackingActive)
 
           if (mapNeedsRedraw) {
             mapNeedsRedraw = false;
